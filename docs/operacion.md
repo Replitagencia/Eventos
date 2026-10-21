@@ -8,6 +8,7 @@
 | `PUBLIC_URL` | Origen exacto que abrirán los navegadores; se valida en mutaciones |
 | `DATABASE_PATH` | Archivo SQLite en un volumen persistente |
 | `COOKIE_SECURE` | `true` con HTTPS; `false` solo para ensayo local |
+| `TRUST_PROXY` | `1` solo detrás del único Caddy del Compose; `0` en local |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Cuenta inicial administradora |
 | `OPERATOR_EMAIL`, `OPERATOR_PASSWORD` | Cuenta inicial de acreditación |
 | `SEED_DEMO` | Crea datos ficticios solo si no hay eventos |
@@ -19,11 +20,13 @@ Usar contraseñas distintas de al menos 16 caracteres. `.env` se crea con permis
 
 ## Despliegue para celulares
 
-1. Elegir alojamiento que ejecute Node 24 como proceso persistente y tenga disco persistente. No se ha contratado ni creado infraestructura desde este repositorio.
+La configuración del servidor exclusivo solicitado está en [despliegue](despliegue.md), con Docker Compose, HTTPS, volumen persistente y respaldos.
+
+1. Usar alojamiento con Node 24 como proceso persistente y disco persistente. El servidor exclusivo de DigitalOcean ya está publicado; ver [estado del despliegue](despliegue.md).
 2. Instalar dependencias con `npm ci --omit=dev` y provisionar `.env` fuera de Git.
 3. Establecer `NODE_ENV=production`, `HOST=0.0.0.0`, `PUBLIC_URL=https://<dominio>`, `COOKIE_SECURE=true` y ruta persistente de base de datos. Quitar la semilla al usar datos reales.
 4. Poner HTTPS delante del servicio. El proxy debe preservar `Origin`, permitir SSE, desactivar buffering para `/api/live` y aceptar conexiones largas con latidos de 15 segundos.
-5. Ejecutar una sola réplica. Restringir acceso directo al puerto del servicio. No habilitar proxy de confianza indiscriminadamente: actualmente el limitador observa la IP del proxy y puede compartir el cupo entre usuarios.
+5. Ejecutar una sola réplica. Restringir acceso directo al puerto del servicio. En el Compose preparado, `TRUST_PROXY=1` confía en un único Caddy que reemplaza la IP reenviada; el puerto de Node no es público. En local se mantiene desactivado. No habilitarlo con otra topología sin revisión.
 6. Asignar las cuentas de operario al evento en el panel. Entrar desde los celulares a `https://<dominio>/acreditacion/`, permitir cámara y completar el guion de ensayo.
 
 Para un túnel HTTPS de demostración, mantener el servidor en `127.0.0.1`, poner la URL del túnel en `PUBLIC_URL` y `COOKIE_SECURE=true`, reiniciar y acceder exclusivamente por la URL HTTPS. Mantener encendido el computador. La URL de localhost solo sirve en el propio equipo.

@@ -16,6 +16,8 @@ El panel administrador y la aplicación de operarios tienen HTML/CSS/JavaScript 
 
 Objetivo inicial: un proceso Node, un disco persistente, varios navegadores. No desplegar como función efímera ni escalar a réplicas independientes con archivos SQLite distintos. El canal SSE es local al proceso: para múltiples procesos se necesitarán PostgreSQL y un mecanismo compartido de publicación de cambios.
 
+El despliegue en `test.registroevento.cl` usa un servidor exclusivo con Compose: Caddy publica HTTPS y Node queda en la red privada, con SQLite en un volumen persistente. `TRUST_PROXY=1` confía exactamente en un salto; Caddy reemplaza `X-Forwarded-For` por la IP real de su conexión. No añadir más proxies ni publicar el puerto Node sin revisar esta frontera. `/healthz` comprueba la base sin revelar datos. El respaldo diario usa la API SQLite, convierte la copia a un archivo independiente sin WAL y verifica su integridad.
+
 ## Modelo
 
 - `users`: cuenta, hash scrypt y rol.

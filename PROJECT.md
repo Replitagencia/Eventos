@@ -51,7 +51,7 @@ Campos de invitado: nombre completo y correo obligatorios; RUT y empresa opciona
 
 **Jueves 22, antes de la demo:** importar solo datos autorizados, verificar red, imprimir QR de respaldo, probar doble ingreso desde dos operadores, revisar reporte y disponer de búsqueda manual.
 
-La hora exacta de presentación, aforo esperado, alojamiento, dominio y proveedor de correo todavía no están definidos.
+La hora exacta de presentación, aforo esperado y proveedor de correo todavía no están definidos. El servidor exclusivo DigitalOcean y el dominio `test.registroevento.cl` fueron publicados el 21 de octubre; ver [despliegue](docs/despliegue.md).
 
 ## Criterios de aceptación
 

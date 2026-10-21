@@ -2,6 +2,8 @@
 
 Aplicación web de invitaciones y acreditación QR. MVP preparado para la demostración del **jueves 22 de octubre de 2026**, hora de Santiago de Chile.
 
+Servidor de pruebas publicado: [Administración](https://test.registroevento.cl/) · [Acreditación móvil](https://test.registroevento.cl/acreditacion/). Base independiente, acceso privado y correo aún desactivado. Ver [estado del despliegue](docs/despliegue.md).
+
 ## Inicio local
 
 Requiere Node.js 24 LTS y npm.
@@ -59,6 +61,7 @@ En equipos con Chrome instalado se puede usar `PLAYWRIGHT_CHROME=1 npm run test:
 - [Arquitectura y decisiones técnicas](docs/arquitectura.md)
 - [Guion de demostración y aceptación](docs/demo-jueves.md)
 - [Operación, despliegue y correo](docs/operacion.md)
+- [Servidor exclusivo y publicación en test.registroevento.cl](docs/despliegue.md)
 - [Plantilla CSV de invitados](public/plantilla-invitados.csv)
 
 ## Estructura

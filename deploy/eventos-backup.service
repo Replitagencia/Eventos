@@ -1,0 +1,10 @@
+[Unit]
+Description=Respaldo verificado de Eventos
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/eventos
+ExecStart=/usr/bin/docker compose exec -T app node scripts/backup.js
+UMask=0077

@@ -18,7 +18,14 @@ export function createApp(db, config, { sendMail } = {}) {
   app.locals.closeStreams = () => { for (const stream of streams) stream.res.end(); };
   const broadcast = () => { for (const stream of streams) stream.res.write('data: refresh\n\n'); };
   app.disable('x-powered-by');
+  // Un único proxy que reemplaza X-Forwarded-For; el puerto de Node no se publica.
+  app.set('trust proxy', config.trustProxy === 1 ? 1 : false);
   app.use(helmet({ contentSecurityPolicy: { directives: { 'img-src': ["'self'", 'data:'], 'script-src': ["'self'"], 'upgrade-insecure-requests': config.secureCookie ? [] : null } } }));
+  app.get('/healthz', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { db.prepare('SELECT 1').get(); res.json({ ok: true }); }
+    catch { res.status(503).json({ ok: false }); }
+  });
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     if (!['GET','HEAD','OPTIONS'].includes(req.method) && (req.get('X-Requested-With') !== 'eventos' || (req.get('Origin') && req.get('Origin') !== new URL(config.publicUrl).origin))) return res.status(403).json({ error: 'Solicitud no autorizada.' });
