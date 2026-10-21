@@ -13,6 +13,10 @@ test('flujo administrador y operador móvil sincronizados', async ({ page, brows
   await page.locator('#modal').getByLabel('Correo electrónico', { exact: true }).fill('prueba@example.com');
   await page.getByRole('button', { name: 'Guardar invitado', exact: true }).click();
   await expect(page.locator('#stat-total')).toHaveText('13');
+  await expect(page.locator('#mail-summary')).toContainText('Por enviar');
+  await page.getByLabel('Filtrar correos').selectOption('sent');
+  await expect(page.locator('#list-count')).toHaveText('0 de 13 invitados');
+  await page.getByLabel('Filtrar correos').selectOption('pending');
   await page.getByLabel('Buscar invitados', { exact: true }).fill('Invitada Prueba');
   await page.getByRole('button', { name: 'Ver invitación', exact: true }).click();
   const invitation = page.frameLocator('#invitation-preview');
@@ -41,6 +45,12 @@ test('flujo administrador y operador móvil sincronizados', async ({ page, brows
   await mobile.getByRole('button', { name: 'Confirmar acreditación' }).click();
   await expect(mobile.locator('#checkin-result')).toContainText('ACREDITADO');
   await expect(page.locator('#stat-checked')).toHaveText('1');
+  await page.getByRole('button', { name: 'Ver ficha', exact: true }).click();
+  await expect(page.locator('#modal')).toContainText('Ingreso registrado');
+  await expect(page.locator('#modal')).toContainText('operator@test.local');
+  await expect(page.locator('#modal')).toContainText('No hay intentos de envío registrados');
+  await page.screenshot({ path: 'test-results/ficha-invitado.png', fullPage: true });
+  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
   expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await mobile.screenshot({ path: 'test-results/acreditacion-mobile.png', fullPage: true });
   await mobileContext.close();

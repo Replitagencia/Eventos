@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { migrate } from './migrations.js';
 
 export const token = () => randomBytes(32).toString('base64url');
 export function passwordHash(password) {
@@ -30,8 +31,8 @@ export function openDatabase(path) {
       checkin_method TEXT, invitation_status TEXT NOT NULL DEFAULT 'pending', sent_at TEXT,
       UNIQUE(event_id,email));
     CREATE UNIQUE INDEX IF NOT EXISTS guest_rut ON guests(event_id,rut) WHERE rut != '';
-    CREATE INDEX IF NOT EXISTS guests_event ON guests(event_id);
-    PRAGMA user_version=1;`);
+    CREATE INDEX IF NOT EXISTS guests_event ON guests(event_id);`);
+  migrate(db);
   return db;
 }
 export function bootstrap(db, config) {

@@ -22,7 +22,8 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 | 4–5 min | Escanear desde el operador | “ACREDITADO” y hora |
 | 5 min | Volver a escanear el mismo QR | “YA INGRESÓ”; total sin duplicar |
 | 5–6 min | Buscar otro invitado y confirmar manualmente | Segundo ingreso registrado |
-| 6–7 min | Volver al panel y descargar reporte | Totales, hora, operador y método |
+| 6–7 min | Abrir Ver ficha y volver al panel | Datos, correo, hora de ingreso y operador |
+| 7–8 min | Filtrar invitados y descargar los reportes | CSV de invitados/ingresos e historial de correos |
 
 La cámara se detiene tras leer un QR para permitir revisar el resultado; pulsar “Activar cámara” para el siguiente invitado.
 

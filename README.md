@@ -20,13 +20,14 @@ Con `SEED_DEMO=true`, el primer inicio crea un evento y 12 invitados **ficticios
 
 - Acceso con contraseña, sesión privada de 12 horas y roles administrador/operador.
 - Crear eventos con fecha y lugar; seleccionar entre distintos eventos.
-- Agregar y editar invitados; buscar nombre, correo, RUT o empresa.
+- Registro interno con ficha por invitado: datos, fecha de alta, correos e ingreso. Agregar, editar y buscar por nombre, correo, RUT o empresa.
+- Filtrar por asistencia y estado de correo; consultar intentos enviados o por revisar, con destinatario y administrador solicitante.
 - Importar `.csv` o `.xlsx`, hasta 1.000 filas / 2 MB. Valida antes de insertar y omite duplicados por correo o RUT dentro del evento.
 - Generar, visualizar y descargar un QR único por invitado/evento.
 - Escanear desde la cámara del navegador o acreditar manualmente con confirmación.
 - Registrar un único ingreso con fecha, método y operador; rechazar QR inválido o de otro evento.
 - Actualizar paneles y listas de operadores conectados mediante eventos del servidor (SSE).
-- Exportar reporte CSV con estado, fecha UTC y operador. Excel puede abrirlo.
+- Exportar un CSV de invitados/ingresos y otro del historial de correos. Excel puede abrirlos.
 - Revisar y enviar una invitación HTML personalizada con el QR integrado en el primer correo cuando se configura SMTP. El invitado no necesita registrarse ni confirmar antes. El envío está desactivado por defecto.
 
 ## Configuración y alcance

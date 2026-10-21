@@ -31,14 +31,14 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 | Área | Entrega |
 | --- | --- |
 | Eventos | Creación y selección de eventos |
-| Invitados | Alta, edición, búsqueda por nombre/correo/RUT/empresa |
+| Invitados | Registro interno, fecha de alta, ficha individual, edición y búsqueda por nombre/correo/RUT/empresa |
 | Importación | CSV y XLSX; errores por fila; duplicados omitidos |
 | QR | Token aleatorio de 256 bits, ligado al evento y al invitado |
 | Correo | Invitación HTML personalizada con QR integrado, vista previa, SMTP individual y registro de estado |
 | Acreditación | Cámara web, código pegado y búsqueda manual |
 | Concurrencia | Actualización condicional atómica que admite un solo ingreso |
 | Panel | Totales, acreditados, pendientes, porcentaje y últimas llegadas |
-| Reportes | CSV con ingreso UTC, operador y método |
+| Reportes | CSV de invitados/ingresos y CSV independiente del historial de correos |
 | Acceso | Roles, contraseñas con scrypt, cookies HttpOnly, protección de origen |
 
 Campos de invitado: nombre completo y correo obligatorios; RUT y empresa opcionales. El correo se compara sin distinguir mayúsculas. El RUT se normaliza quitando puntos, guion y espacios; **no se valida su dígito verificador** en esta versión. No se almacena información sensible adicional.
@@ -70,6 +70,12 @@ La hora exacta de presentación, aforo esperado, alojamiento, dominio y proveedo
 ## Referencia de experiencia
 
 Se toma como referencia la invitación por correo y gestión de invitados de Bice Vida. Para Eventos, la decisión confirmada es entregar el QR **directamente en el primer correo**. La persona no debe registrarse ni confirmar asistencia antes de recibirlo. La vista previa y el envío comparten la misma plantilla, con nombre del invitado, nombre del evento, fecha, lugar y pase QR. El escaneo en acceso registra la llegada, no una confirmación previa.
+
+## Registro interno
+
+El registro es administrativo; lo mantiene el equipo organizador. No es un formulario público que deba completar el invitado. Cada ficha muestra sus datos, fecha de alta cuando existe, estado de la invitación, historial de intentos de correo y el ingreso con fecha, método y operador. La lista permite combinar búsqueda, asistencia y estado de correo. Los correos se generan desde esa ficha y se revisan antes del envío.
+
+El historial conserva destinatario, nombre, remitente, asunto, fecha, administrador solicitante y resultado de cada intento. Editar los datos actuales no reescribe el historial. “Enviada” significa aceptada por SMTP, no recibida ni leída; “Por revisar” indica que no se confirmó la aceptación. La vista previa no se registra como envío.
 
 ## Próxima etapa
 

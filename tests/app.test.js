@@ -13,6 +13,7 @@ import { csvCell } from '../src/import.js';
 
 let db, app, server, base, adminCookie, operatorCookie, directory;
 const deliveries = [];
+let rejectMail = false;
 const config = { publicUrl: 'http://localhost:3000', secureCookie: false, adminEmail: 'admin@test.local', adminPassword: 'a-secure-admin-password', operatorEmail: 'operator@test.local', operatorPassword: 'a-secure-operator-password', seedDemo: true, mailEnabled: false };
 async function request(path, { method = 'GET', body, cookie = adminCookie, headers = {} } = {}) {
   const response = await fetch(`${base}${path}`, { method, headers: { 'X-Requested-With': 'eventos', ...(cookie ? { Cookie: cookie } : {}), ...(body && typeof body !== 'object' ? {} : body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? Buffer.isBuffer(body) ? body : JSON.stringify(body) : undefined });
@@ -23,9 +24,10 @@ before(async () => {
   directory = mkdtempSync(join(tmpdir(), 'eventos-tests-'));
   db = openDatabase(join(directory, 'test.sqlite')); bootstrap(db, config);
   app = createApp(db, config, { sendMail: async message => {
+    if (rejectMail) throw new Error('Simulated SMTP rejection');
     const rendered = await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(message);
     deliveries.push({ message, mime: rendered.message.toString() });
-    return { accepted: [message.to] };
+    return { accepted: [message.to], messageId: rendered.messageId };
   } }); server = app.listen(0, '127.0.0.1');
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); base = `http://127.0.0.1:${server.address().port}`;
   for (const role of ['admin','operator']) {
@@ -41,6 +43,8 @@ test('acceso autenticado, roles y protección de origen', async () => {
   assert.equal((await request('/api/events', { method: 'POST', cookie: operatorCookie, body: { name: 'No autorizado' } })).status, 403);
   assert.equal((await request('/api/events/1/report.csv', { cookie: operatorCookie })).status, 403);
   assert.equal((await request('/api/events/1/guests/1/qr', { cookie: operatorCookie })).status, 403);
+  assert.equal((await request('/api/events/1/guests/1/detail', { cookie: operatorCookie })).status, 403);
+  assert.equal((await request('/api/events/1/email-report.csv', { cookie: operatorCookie })).status, 403);
   assert.equal((await request('/api/events/1/checkin', { method: 'POST', headers: { Origin: 'https://otro.example' }, body: { guestId: 1 } })).status, 403);
   assert.equal((await request('/api/events/1/checkin', { method: 'POST', headers: { 'X-Requested-With': '' }, body: { guestId: 1 } })).status, 403);
 });
@@ -125,6 +129,7 @@ test('vista previa privada y primer correo incluyen el mismo QR, sin registro pr
   const png = PNG.sync.read(Buffer.from(previewImage, 'base64'));
   const qr = jsQR(new Uint8ClampedArray(png.data), png.width, png.height).data;
   assert.equal(deliveries.length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) total FROM email_deliveries').get().total, 0);
   assert.equal(db.prepare('SELECT invitation_status FROM guests WHERE id=7').get().invitation_status, 'pending');
   config.mailEnabled = true; config.smtp = { host: 'smtp.test.local' }; config.mailFrom = 'eventos@example.com';
   try {
@@ -141,9 +146,59 @@ test('vista previa privada y primer correo incluyen el mismo QR, sin registro pr
     assert.equal(jsQR(new Uint8ClampedArray(attachment.data), attachment.width, attachment.height).data, qr);
     const guest = db.prepare('SELECT * FROM guests WHERE id=7').get();
     assert.equal(guest.invitation_status, 'sent'); assert.ok(guest.sent_at); assert.equal(guest.checked_at, null);
+    const detail = await request(`${path}/detail`);
+    assert.equal(detail.data.deliveries.length, 1);
+    assert.equal(detail.data.deliveries[0].recipient, 'invitado7@example.com');
+    assert.equal(detail.data.deliveries[0].initiated_by_email, config.adminEmail);
+    assert.equal(detail.data.deliveries[0].status, 'sent');
+    assert.ok(detail.data.deliveries[0].message_id);
+    assert.ok(detail.data.guest.created_at);
+    assert.equal(detail.data.guest.token, undefined);
     assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 200);
     assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 409);
   } finally { config.mailEnabled = false; }
+});
+test('la ficha conserva destinatario histórico al editar y muestra ingreso y operador', async () => {
+  const path = '/api/events/1/guests/7';
+  const before = (await request(`${path}/detail`)).data;
+  assert.equal((await request(path, { method: 'PATCH', body: { name: 'Antonia Actualizada', email: 'antonia-nueva@example.com', company: 'Empresa nueva' } })).status, 200);
+  const { guest, deliveries: history } = (await request(`${path}/detail`)).data;
+  assert.equal(guest.email, 'antonia-nueva@example.com');
+  assert.equal(guest.invitation_status, 'pending'); assert.equal(guest.sent_at, null);
+  assert.equal(guest.created_at, before.guest.created_at);
+  assert.equal(guest.checked_at, before.guest.checked_at);
+  assert.equal(guest.operator, config.operatorEmail);
+  assert.equal(history[0].recipient, 'invitado7@example.com');
+  assert.equal(history[0].recipient_name, 'Antonia Díaz');
+  assert.equal((await request('/api/events/2/guests/7/detail')).status, 404);
+});
+test('historial audita error y reintento, se exporta y persiste al reabrir la base', async () => {
+  config.mailEnabled = true;
+  try {
+    rejectMail = true;
+    assert.equal((await request('/api/events/1/guests/8/invite', { method: 'POST' })).status, 502);
+    let detail = (await request('/api/events/1/guests/8/detail')).data;
+    assert.equal(detail.guest.invitation_status, 'failed');
+    assert.equal(detail.deliveries.length, 1);
+    assert.equal(detail.deliveries[0].status, 'failed');
+    assert.ok(detail.deliveries[0].finished_at);
+    rejectMail = false;
+    assert.equal((await request('/api/events/1/guests/8/invite', { method: 'POST' })).status, 200);
+    detail = (await request('/api/events/1/guests/8/detail')).data;
+    assert.deepEqual(detail.deliveries.map(d => d.status), ['sent','failed']);
+    assert.equal(detail.guest.invitation_status, 'sent');
+    const report = await request('/api/events/1/email-report.csv');
+    assert.equal(report.status, 200);
+    assert.match(report.data, /invitado8@example.com/);
+    assert.match(report.data, /invitado7@example.com/);
+    assert.match(report.data, /admin@test.local/);
+    assert.match(report.data, /failed/);
+    const otherEvent = await request('/api/events/2/email-report.csv');
+    assert.doesNotMatch(otherEvent.data, /invitado8@example.com/);
+    const reopened = openDatabase(join(directory, 'test.sqlite'));
+    assert.equal(reopened.prepare('SELECT COUNT(*) total FROM email_deliveries WHERE guest_id=8').get().total, 2);
+    reopened.close();
+  } finally { config.mailEnabled = false; rejectMail = false; }
 });
 test('el contenido personalizado del correo no interpreta HTML del invitado', async () => {
   const result = await request('/api/events/1/guests', { method: 'POST', body: { name: 'Cliente <img src=x onerror=alert(1)>', email: 'escape@example.com' } });

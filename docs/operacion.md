@@ -34,6 +34,14 @@ Configurar un proveedor SMTP y remitente autorizado, incluyendo autenticación d
 
 No ejecutar envíos a los ejemplos de la semilla ni a listas reales sin instrucción del responsable. Un estado `sent` significa que SMTP aceptó el mensaje; podría rebotar después. No hay tracking de apertura. Credenciales SMTP no deben aparecer en capturas ni commits.
 
+## Registro interno y seguimiento
+
+En **Invitados**, usar **Ver ficha** para consultar los datos y las fechas de la persona, los intentos de correo y su ingreso. La ficha incluye el administrador que solicitó cada correo y el operador que acreditó. La lista se actualiza en vivo; una ficha abierta puede refrescarse con **Actualizar ficha**.
+
+Los contadores y filtros de correo corresponden al estado actual de cada invitado: por enviar, en proceso, enviada o por revisar. Al cambiar su dirección, vuelve a por enviar, pero los correos anteriores mantienen su destinatario original en el historial. **Invitados CSV** exporta el estado actual de todos los invitados del evento; **Correos CSV** exporta todos sus intentos de envío, independientemente de los filtros de pantalla.
+
+La fecha de alta se registra para nuevas personas. Los registros de la versión anterior muestran “Sin fecha histórica”; sus estados de envío conocidos se conservan, pero no se reconstruye un historial que antes no se almacenaba. La generación de la vista previa no altera el estado ni cuenta como intento de envío.
+
 ## Respaldo
 
 Detener el servicio de forma ordenada antes de copiar la base para un respaldo sencillo. Con el servicio activo, usar la API de respaldo SQLite; copiar solo el archivo principal mientras WAL está activo puede perder cambios. Guardar respaldos fuera del repositorio, con acceso restringido, y ensayar una restauración en una instalación separada antes del evento.

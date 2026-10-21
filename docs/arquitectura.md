@@ -21,7 +21,8 @@ Objetivo inicial: un proceso Node, un disco persistente, varios navegadores. No 
 - `users`: cuenta, hash scrypt y rol.
 - `sessions`: credencial aleatoria, usuario y expiración de 12 horas.
 - `events`: nombre, fecha ISO con zona horaria y lugar.
-- `guests`: evento, nombre, correo, RUT, empresa, token, acreditación, operador, método y estado de invitación.
+- `guests`: evento, nombre, correo, RUT, empresa, token, fecha de alta, acreditación, operador, método y estado de invitación.
+- `email_deliveries`: historial de intentos de envío con destinatario y nombre al enviar, remitente, asunto, fechas, estado, administrador solicitante e ID del mensaje cuando el proveedor lo devuelve. No almacena el cuerpo HTML, el QR ni credenciales SMTP.
 
 Restricciones: email único por evento; RUT no vacío único por evento; token único global. El token usa 32 bytes aleatorios. No hay secuencias predecibles de QR. El formato escaneado es `EVT:<event_id>:<token>`.
 
@@ -55,11 +56,13 @@ Importación en memoria, solo administradores, máximo 2 MB comprimidos y 1.000 
 
 La plantilla compartida `src/invitation.js` genera vista previa y correo con los datos escapados. La vista previa autenticada usa una imagen embebida y un iframe sin permisos; SMTP usa la misma imagen adjunta mediante CID. El QR se entrega directamente en la invitación inicial y mantiene el mismo token al visualizarlo y enviarlo. No hay un formulario público ni una fase de confirmación previa.
 
+La reserva del envío y la creación de su registro histórico se realizan en una sola transacción, antes de contactar al proveedor. El estado final del invitado y del intento se actualizan juntos. Los cambios posteriores del correo del invitado no alteran los destinatarios históricos. La ficha y el reporte de correos requieren administrador.
+
 El envío SMTP es individual. La transición `pending/failed → sending` evita envíos simultáneos; al aceptar SMTP se registra `sent`, ante error `failed`. Una caída del proceso durante el envío puede dejar `sending`; debe revisarse el proveedor antes de corregirlo manualmente. Un timeout SMTP puede ser ambiguo y un reintento podría duplicar el correo. Una siguiente fase debe usar cola e identificadores de proveedor. No se afirma entrega ni lectura.
 
 ## Evolución
 
-El esquema inicial se crea al arrancar y marca `user_version=1`. Cambios futuros necesitan migraciones versionadas; no confiar en `CREATE TABLE IF NOT EXISTS` para actualizar columnas. Antes del uso operativo: copias verificadas, cuentas individuales, HTTPS, pruebas de dispositivos y carga, monitoreo y política de retención. No registrar contraseñas, tokens QR ni listados en logs.
+El esquema se actualiza mediante `src/migrations.js`. La migración v2 añade `created_at`, un trigger de fecha para nuevos invitados y `email_deliveries` dentro de una transacción. Conserva QR, invitados, estados e ingresos existentes. Las filas antiguas conservan fecha de alta desconocida (`NULL`); no se inventan fechas ni envíos históricos. Reabrir una base v2 no repite la migración. Cambios futuros necesitan nuevas migraciones versionadas; no confiar en `CREATE TABLE IF NOT EXISTS` para actualizar columnas. Antes del uso operativo: copias verificadas, cuentas individuales, HTTPS, pruebas de dispositivos y carga, monitoreo y política de retención. No registrar contraseñas, tokens QR ni listados en logs.
 
 ## Referencias técnicas
 

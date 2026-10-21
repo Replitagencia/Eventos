@@ -2,6 +2,8 @@ const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const state = { user: null, events: [], eventId: null, guests: [], view: 'dashboard', live: null, scanner: null, scanning: false, checking: false, generation: 0 };
 const time = value => new Date(value).toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const stamp = value => value ? new Date(value).toLocaleString('es-CL', { timeZone: 'America/Santiago', dateStyle: 'short', timeStyle: 'medium' }) : 'Sin fecha histórica';
+const mailStatus = { pending: 'Por enviar', sending: 'En proceso', sent: 'Enviada', failed: 'Por revisar' };
 const eventPath = () => `/api/events/${state.eventId}`;
 let toastTimer;
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 6000); }
@@ -54,7 +56,7 @@ async function refresh() {
   if (generation !== state.generation) return;
   state.guests = guests;
   renderGuests(); renderArrivals(); renderManual();
-  ['#add-guest','#import-button','#export','#start-camera'].forEach(selector => $(selector).disabled = !event);
+  ['#add-guest','#import-button','#export','#export-mail','#start-camera'].forEach(selector => $(selector).disabled = !event);
 }
 function renderArrivals() {
   const arrivals = state.guests.filter(g => g.checked_at).sort((a,b) => b.checked_at.localeCompare(a.checked_at)).slice(0,5);
@@ -62,10 +64,11 @@ function renderArrivals() {
 }
 function matches(guest, query) { return `${guest.name} ${guest.email} ${guest.rut} ${guest.company}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(query.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()); }
 function renderGuests() {
-  const query = $('#search').value.trim(); const filter = $('#status-filter').value;
-  const guests = state.guests.filter(g => matches(g,query) && (filter === 'all' || (filter === 'checked' ? g.checked_at : !g.checked_at)));
-  const statuses = { pending: 'Pendiente', sending: 'Enviando', sent: 'Enviada', failed: 'Fallida' };
-  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span></td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-qr="${g.id}">Ver invitación</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}${!g.checked_at ? `<button class="table-action" data-manual="${g.id}">Acreditar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
+  const query = $('#search').value.trim(); const filter = $('#status-filter').value; const mailFilter = $('#mail-filter').value;
+  const guests = state.guests.filter(g => matches(g,query) && (filter === 'all' || (filter === 'checked' ? g.checked_at : !g.checked_at)) && (state.user.role !== 'admin' || mailFilter === 'all' || g.invitation_status === mailFilter));
+  const statuses = mailStatus;
+  $('#mail-summary').innerHTML = [['pending','Por enviar'],['sending','En proceso'],['sent','Enviadas'],['failed','Por revisar']].map(([key,label]) => `<article><span>${label}</span><strong>${state.guests.filter(g => g.invitation_status === key).length}</strong></article>`).join('') + '<p>Enviada significa aceptada por el proveedor de correo. No confirma entrega ni lectura.</p>';
+  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span>${g.sent_at ? `<small>${stamp(g.sent_at)}</small>` : ''}</td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-detail="${g.id}">Ver ficha</button><button class="table-action" data-qr="${g.id}">Ver invitación</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}${!g.checked_at ? `<button class="table-action" data-manual="${g.id}">Acreditar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
   $('#list-count').textContent = `${guests.length} de ${state.guests.length} invitados`;
 }
 function renderManual() {
@@ -94,6 +97,15 @@ function guestModal(id) {
   modal(`<p class="eyebrow">LISTA DE INVITADOS</p><h2>${id ? 'Editar invitado' : 'Una nueva invitación.'}</h2><form id="modal-form">${[['name','Nombre completo','text',150],['email','Correo electrónico','email',254],['rut','RUT (opcional)','text',20],['company','Empresa (opcional)','text',150]].map(([key,label,type,max]) => `<label>${label}<input name="${key}" type="${type}" maxlength="${max}" value="${esc(guest[key] || '')}" ${['name','email'].includes(key) ? 'required' : ''}></label>`).join('')}<p id="modal-error" class="form-error" role="alert"></p><button class="primary">Guardar invitado</button></form>`);
   bindForm(async data => { await api(`${eventPath()}/guests${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(data) }); toast('Invitado guardado.'); });
 }
+async function showGuestDetail(id) {
+  try {
+    const { guest, deliveries } = await api(`${eventPath()}/guests/${id}/detail`);
+    const fields = [['Correo', guest.email], ['RUT', guest.rut || 'No informado'], ['Empresa', guest.company || 'No informada'], ['Registro', stamp(guest.created_at)], ['Invitación', mailStatus[guest.invitation_status]], ['Envío actual', guest.sent_at ? stamp(guest.sent_at) : 'Sin envío confirmado']];
+    modal(`<p class="eyebrow">REGISTRO INTERNO DEL INVITADO</p><h2>${esc(guest.name)}</h2><dl class="guest-detail-fields">${fields.map(([label,value]) => `<dt>${label}</dt><dd>${esc(value)}</dd>`).join('')}</dl><section class="checkin-detail"><h3>${guest.checked_at ? '✓ Ingreso registrado' : 'Pendiente de ingreso'}</h3><p>${guest.checked_at ? `${stamp(guest.checked_at)} · ${guest.checkin_method === 'qr' ? 'Escaneo QR' : 'Acreditación manual'}<br>Operador: ${esc(guest.operator || 'No disponible')}` : 'Esta persona todavía no ha sido acreditada.'}</p></section><div class="panel-heading"><h3>Historial de correos</h3><button class="text-button" data-detail="${guest.id}">Actualizar ficha</button></div><div class="mail-history">${deliveries.length ? deliveries.map(d => `<article><div class="mail-history-heading"><strong>${esc(mailStatus[d.status])}</strong><time>${stamp(d.started_at)}</time></div><p>${esc(d.subject)}</p><dl><dt>Para</dt><dd>${esc(d.recipient_name)} · ${esc(d.recipient)}</dd><dt>Desde</dt><dd>${esc(d.sender)}</dd><dt>Solicitado por</dt><dd>${esc(d.initiated_by_email)}</dd>${d.finished_at ? `<dt>Finalizado</dt><dd>${stamp(d.finished_at)}</dd>` : ''}</dl>${d.failure_note ? `<p class="mail-history-note">${esc(d.failure_note)}</p>` : ''}${d.status === 'sending' ? '<p class="mail-history-note">En proceso. Si el envío se interrumpió, revisar el proveedor antes de repetirlo.</p>' : ''}</article>`).join('') : '<p class="empty">No hay intentos de envío registrados. La vista previa del correo no cuenta como un envío. Los envíos anteriores a esta actualización pueden no tener historial.</p>'}</div><p class="file-note">Fechas en hora de Santiago. “Enviada” indica aceptación del proveedor; no confirma entrega ni lectura.</p><div class="actions"><button class="primary" data-qr="${guest.id}">Ver invitación y QR</button><button class="secondary" data-edit="${guest.id}">Editar datos</button></div>`);
+    $('#modal').classList.add('invitation-modal');
+  } catch (error) { toast(error.message); }
+}
+
 async function showInvitation(id) {
   const guest = state.guests.find(g => g.id === id);
   const path = `${eventPath()}/guests/${id}`;
@@ -145,6 +157,7 @@ $('#qr-form').onsubmit = async event => { event.preventDefault(); const button =
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.view) setView(button.dataset.view);
+  if (button.dataset.detail) showGuestDetail(Number(button.dataset.detail));
   if (button.dataset.qr) showInvitation(Number(button.dataset.qr));
   if (button.dataset.edit) guestModal(Number(button.dataset.edit));
   if (button.dataset.manual) {
@@ -154,7 +167,7 @@ document.addEventListener('click', event => {
   }
 });
 $('#close-modal').onclick = () => $('#modal').close();
-$('#search').oninput = renderGuests; $('#status-filter').onchange = renderGuests; $('#manual-search').oninput = renderManual;
+$('#search').oninput = renderGuests; $('#status-filter').onchange = renderGuests; $('#mail-filter').onchange = renderGuests; $('#manual-search').oninput = renderManual;
 $('#event-select').onchange = async event => { await stopCamera(); state.eventId = Number(event.target.value); $('#checkin-result').hidden = true; refresh().catch(error => toast(error.message)); };
 $('#add-guest').onclick = () => guestModal();
 $('#new-event').onclick = () => {
@@ -166,6 +179,7 @@ $('#import-button').onclick = () => {
   bindForm(async () => { const file = $('#import-file').files[0]; if (file.size > 2 * 1024 * 1024) throw new Error('El archivo supera 2 MB.'); const result = await api(`${eventPath()}/import`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': file.name.toLowerCase().endsWith('.xlsx') ? 'invitados.xlsx' : 'invitados.csv' }, body: file }); toast(`${result.imported} invitados importados · ${result.duplicates} duplicados omitidos.`); });
 };
 $('#export').onclick = () => { window.location.href = `${eventPath()}/report.csv`; };
+$('#export-mail').onclick = () => { window.location.href = `${eventPath()}/email-report.csv`; };
 $('#logout').onclick = async () => { try { await api('/api/logout', { method: 'POST' }); showLogin(); } catch (error) { toast(error.message); } };
 $('#logout-mobile').onclick = () => $('#logout').click();
 $('#login-form').onsubmit = async event => {
