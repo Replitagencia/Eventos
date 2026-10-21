@@ -1,11 +1,12 @@
 import express from 'express';
 import helmet from 'helmet';
-import { rateLimit } from 'express-rate-limit';
 import QRCode from 'qrcode';
 import nodemailer from 'nodemailer';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { token, passwordMatches } from './db.js';
+import { token } from './db.js';
+import { readSession, requireRole, login, loginLimiter } from './access.js';
+import { operatorRouter } from './operator.js';
 import { parseImport, validateGuest, csvCell } from './import.js';
 import { renderInvitation } from './invitation.js';
 
@@ -24,25 +25,11 @@ export function createApp(db, config, { sendMail } = {}) {
     next();
   });
   app.use(express.json({ limit: '50kb' }));
-  app.use('/api', (req, _res, next) => {
-    const sessionToken = /(?:^|;\s*)eventos_session=([A-Za-z0-9_-]+)/.exec(req.get('Cookie') || '')?.[1];
-    req.sessionToken = sessionToken;
-    req.user = sessionToken && db.prepare('SELECT users.id,users.email,users.role,sessions.expires FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>?').get(sessionToken, Date.now());
-    next();
-  });
-  app.post('/api/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Demasiados intentos. Intenta en 15 minutos.' } }), (req, res) => {
-    const email = String(req.body.email || '').trim().toLowerCase();
-    const password = String(req.body.password || '');
-    const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
-    if (password.length > 256 || !user || !passwordMatches(password, user.password)) throw fail(401, 'Correo o contraseña incorrectos.');
-    const session = token();
-    db.prepare('DELETE FROM sessions WHERE expires<? OR token=?').run(Date.now(), req.sessionToken || '');
-    db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(session, user.id, Date.now() + 12 * 3600 * 1000);
-    res.cookie('eventos_session', session, { httpOnly: true, sameSite: 'strict', secure: config.secureCookie, maxAge: 12 * 3600 * 1000, path: '/' });
-    res.json({ email: user.email, role: user.role });
-  });
-  app.use('/api', (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Inicia sesión para continuar.' }));
-  const admin = (req, _res, next) => req.user.role === 'admin' ? next() : next(fail(403, 'Solo el administrador puede realizar esta acción.'));
+  app.use('/api/operator', operatorRouter(db, config, broadcast));
+  app.use('/api', readSession(db, 'eventos_session'));
+  app.post('/api/login', loginLimiter(), login(db, config, { role: 'admin', cookieName: 'eventos_session', path: '/' }));
+  app.use('/api', requireRole('admin'));
+  const admin = requireRole('admin');
   app.get('/api/me', (req, res) => res.json({ email: req.user.email, role: req.user.role, mailEnabled: config.mailEnabled }));
   app.post('/api/logout', (req, res) => {
     db.prepare('DELETE FROM sessions WHERE token=?').run(req.sessionToken);
@@ -70,6 +57,21 @@ export function createApp(db, config, { sendMail } = {}) {
     req.event = db.prepare('SELECT * FROM events WHERE id=?').get(req.params.eventId);
     if (!req.event) return next(fail(404, 'Evento no encontrado.'));
     next();
+  });
+  app.get('/api/events/:eventId/operators', (req, res) => {
+    res.json(db.prepare("SELECT users.id,users.email,EXISTS(SELECT 1 FROM operator_events WHERE user_id=users.id AND event_id=?) assigned FROM users WHERE role='operator' ORDER BY email").all(req.event.id));
+  });
+  app.put('/api/events/:eventId/operators', (req, res) => {
+    const ids = req.body?.userIds;
+    if (!Array.isArray(ids) || ids.length > 100 || ids.some(id => !Number.isInteger(id)) || new Set(ids).size !== ids.length) throw fail(400, 'Selecciona cuentas de operario válidas.');
+    if (ids.some(id => !db.prepare("SELECT id FROM users WHERE id=? AND role='operator'").get(id))) throw fail(400, 'Solo puedes asignar cuentas de operario.');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare('DELETE FROM operator_events WHERE event_id=?').run(req.event.id);
+      for (const id of ids) db.prepare('INSERT INTO operator_events(user_id,event_id) VALUES(?,?)').run(id,req.event.id);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    broadcast(); res.json({ ok: true });
   });
   const publicGuestColumns = 'id,name,email,rut,company,created_at,checked_at,checkin_method,invitation_status,sent_at';
   app.get('/api/events/:eventId/guests', (req, res) => {
@@ -120,21 +122,6 @@ export function createApp(db, config, { sendMail } = {}) {
     if (!guest) throw fail(404, 'Invitado no encontrado.');
     const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
     res.json({ to: guest.email, ...renderInvitation({ event: req.event, guest, qrSource }) });
-  });
-  app.post('/api/events/:eventId/checkin', (req, res) => {
-    let guest;
-    if (req.body.qr) {
-      const match = /^EVT:(\d+):([A-Za-z0-9_-]{43})$/.exec(String(req.body.qr));
-      if (!match || Number(match[1]) !== req.event.id) throw fail(400, 'QR INVÁLIDO para este evento.');
-      guest = db.prepare('SELECT * FROM guests WHERE event_id=? AND token=?').get(req.event.id, match[2]);
-    } else if (Number.isInteger(req.body.guestId)) {
-      guest = db.prepare('SELECT * FROM guests WHERE event_id=? AND id=?').get(req.event.id, req.body.guestId);
-    }
-    if (!guest) throw fail(400, 'QR INVÁLIDO o invitado no encontrado.');
-    const now = new Date().toISOString();
-    const result = db.prepare('UPDATE guests SET checked_at=?,checked_by=?,checkin_method=? WHERE id=? AND event_id=? AND checked_at IS NULL').run(now, req.user.id, req.body.qr ? 'qr' : 'manual', guest.id, req.event.id);
-    if (!result.changes) return res.status(409).json({ error: 'YA INGRESÓ', name: guest.name, checked_at: db.prepare('SELECT checked_at FROM guests WHERE id=?').get(guest.id).checked_at });
-    broadcast(); res.json({ message: 'ACREDITADO', name: guest.name, checked_at: now });
   });
   app.get('/api/events/:eventId/report.csv', admin, (req, res) => {
     const guests = db.prepare('SELECT guests.*,users.email operator FROM guests LEFT JOIN users ON users.id=guests.checked_by WHERE event_id=? ORDER BY name').all(req.event.id);

@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const state = { user: null, events: [], eventId: null, guests: [], view: 'dashboard', live: null, scanner: null, scanning: false, checking: false, generation: 0 };
+const state = { user: null, events: [], eventId: null, guests: [], view: 'dashboard', live: null, generation: 0 };
 const time = value => new Date(value).toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const stamp = value => value ? new Date(value).toLocaleString('es-CL', { timeZone: 'America/Santiago', dateStyle: 'short', timeStyle: 'medium' }) : 'Sin fecha histórica';
 const mailStatus = { pending: 'Por enviar', sending: 'En proceso', sent: 'Enviada', failed: 'Por revisar' };
@@ -19,7 +19,7 @@ async function api(path, options = {}) {
   return data;
 }
 function showLogin() {
-  stopCamera(); state.live?.close(); state.user = null;
+  state.live?.close(); state.user = null;
   $('#modal').close(); $('#workspace').hidden = true; $('#login-view').hidden = false;
 }
 async function enterWorkspace() {
@@ -28,7 +28,8 @@ async function enterWorkspace() {
   document.querySelectorAll('.admin-only').forEach(element => element.hidden = state.user.role !== 'admin');
   $('#account-role').textContent = state.user.role === 'admin' ? 'Administrador' : 'Operador';
   await refresh();
-  setView(state.user.role === 'admin' ? 'dashboard' : 'scanner');
+  setView('dashboard');
+  $('#operator-url').value = `${location.origin}/acreditacion/`;
   state.live?.close(); state.live = new EventSource('/api/live');
   state.live.onopen = () => { $('#connection').textContent = 'Sincronizado en vivo'; $('#connection').classList.remove('offline'); };
   state.live.onerror = () => { $('#connection').textContent = 'Reconectando · revisa la conexión'; $('#connection').classList.add('offline'); };
@@ -55,8 +56,8 @@ async function refresh() {
   const guests = event ? await api(`${eventPath()}/guests`) : [];
   if (generation !== state.generation) return;
   state.guests = guests;
-  renderGuests(); renderArrivals(); renderManual();
-  ['#add-guest','#import-button','#export','#export-mail','#start-camera'].forEach(selector => $(selector).disabled = !event);
+  renderGuests(); renderArrivals();
+  ['#add-guest','#import-button','#export','#export-mail','#manage-operators'].forEach(selector => $(selector).disabled = !event);
 }
 function renderArrivals() {
   const arrivals = state.guests.filter(g => g.checked_at).sort((a,b) => b.checked_at.localeCompare(a.checked_at)).slice(0,5);
@@ -68,20 +69,14 @@ function renderGuests() {
   const guests = state.guests.filter(g => matches(g,query) && (filter === 'all' || (filter === 'checked' ? g.checked_at : !g.checked_at)) && (state.user.role !== 'admin' || mailFilter === 'all' || g.invitation_status === mailFilter));
   const statuses = mailStatus;
   $('#mail-summary').innerHTML = [['pending','Por enviar'],['sending','En proceso'],['sent','Enviadas'],['failed','Por revisar']].map(([key,label]) => `<article><span>${label}</span><strong>${state.guests.filter(g => g.invitation_status === key).length}</strong></article>`).join('') + '<p>Enviada significa aceptada por el proveedor de correo. No confirma entrega ni lectura.</p>';
-  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span>${g.sent_at ? `<small>${stamp(g.sent_at)}</small>` : ''}</td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-detail="${g.id}">Ver ficha</button><button class="table-action" data-qr="${g.id}">Ver invitación</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}${!g.checked_at ? `<button class="table-action" data-manual="${g.id}">Acreditar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
+  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span>${g.sent_at ? `<small>${stamp(g.sent_at)}</small>` : ''}</td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-detail="${g.id}">Ver ficha</button><button class="table-action" data-qr="${g.id}">Ver invitación</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
   $('#list-count').textContent = `${guests.length} de ${state.guests.length} invitados`;
 }
-function renderManual() {
-  const query = $('#manual-search').value.trim();
-  const guests = query.length >= 2 ? state.guests.filter(g => matches(g, query)).slice(0,20) : [];
-  $('#manual-results').innerHTML = guests.map(g => `<div class="manual-row"><div><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small></div>${g.checked_at ? '<span class="badge checked">Ya ingresó</span>' : `<button class="table-action" data-manual="${g.id}">Acreditar</button>`}</div>`).join('') || `<p class="empty">${query.length < 2 ? 'Escribe al menos 2 caracteres para buscar.' : 'No encontramos invitados.'}</p>`;
-}
 function setView(view) {
-  if (view !== 'scanner') stopCamera();
   state.view = view; $('#workspace').dataset.view = view;
-  for (const name of ['dashboard','guests','scanner']) $(`#${name}-view`).hidden = view !== name;
+  for (const name of ['dashboard','guests','access']) $(`#${name}-view`).hidden = view !== name;
   document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
-  $('#page-title').textContent = { dashboard: 'El encuentro, en tus manos.', guests: 'Cada invitado importa.', scanner: 'Una gran bienvenida.' }[view];
+  $('#page-title').textContent = { dashboard: 'El encuentro, en tus manos.', guests: 'Cada invitado importa.', access: 'Un acceso separado para tu equipo.' }[view];
 }
 function modal(html) { $('#modal').classList.remove('invitation-modal'); $('#modal-content').innerHTML = html; $('#modal').showModal(); }
 function bindForm(handler) {
@@ -121,54 +116,25 @@ async function showInvitation(id) {
     };
   } catch (error) { toast(error.message); }
 }
-async function checkin(body) {
-  if (state.checking) return;
-  state.checking = true;
-  const result = $('#checkin-result');
-  try {
-    const data = await api(`${eventPath()}/checkin`, { method: 'POST', body: JSON.stringify(body) });
-    result.className = ''; result.innerHTML = `<strong>✓ ACREDITADO</strong>${esc(data.name)} · ${time(data.checked_at)}`;
-    await refresh();
-  } catch (error) {
-    result.className = 'error'; result.innerHTML = `<strong>${esc(error.message)}</strong>${esc(error.data?.name || '')}${error.data?.checked_at ? ` · ${time(error.data.checked_at)}` : ''}`;
-    toast(error.message);
-  } finally { result.hidden = false; state.checking = false; if (state.view === 'scanner') result.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-}
-async function stopCamera() {
-  if (state.scanner?.isScanning) { try { await state.scanner.stop(); } catch {} }
-  state.scanning = false;
-  $('#start-camera').hidden = false; $('#stop-camera').hidden = true;
-}
-$('#start-camera').onclick = async () => {
-  if (!window.isSecureContext) return toast('Abre la aplicación con HTTPS para usar la cámara del celular.');
-  if (!state.eventId) return toast('Selecciona un evento.');
-  $('#start-camera').disabled = true;
-  try {
-    state.scanner ||= new Html5Qrcode('reader');
-    await state.scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 230, height: 230 } }, async decoded => {
-      if (state.scanning && !state.checking) { state.scanning = false; await stopCamera(); await checkin({ qr: decoded }); }
-    });
-    state.scanning = true; $('#start-camera').hidden = true; $('#stop-camera').hidden = false;
-  } catch { toast('No se pudo abrir la cámara. Revisa el permiso del navegador o usa búsqueda manual.'); }
-  finally { $('#start-camera').disabled = false; }
-};
-$('#stop-camera').onclick = stopCamera;
-$('#qr-form').onsubmit = async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; await checkin({ qr: event.currentTarget.elements.qr.value.trim() }); button.disabled = false; };
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.view) setView(button.dataset.view);
   if (button.dataset.detail) showGuestDetail(Number(button.dataset.detail));
   if (button.dataset.qr) showInvitation(Number(button.dataset.qr));
   if (button.dataset.edit) guestModal(Number(button.dataset.edit));
-  if (button.dataset.manual) {
-    const guest = state.guests.find(g => g.id === Number(button.dataset.manual));
-    modal(`<h2>Confirmar ingreso</h2><p>Vas a acreditar a <strong>${esc(guest.name)}</strong>.</p><p class="muted">${esc(guest.email)}</p><button id="confirm-checkin" class="primary">Confirmar acreditación</button>`);
-    $('#confirm-checkin').onclick = async () => { $('#modal').close(); setView('scanner'); await checkin({ guestId: guest.id }); };
-  }
+
 });
 $('#close-modal').onclick = () => $('#modal').close();
-$('#search').oninput = renderGuests; $('#status-filter').onchange = renderGuests; $('#mail-filter').onchange = renderGuests; $('#manual-search').oninput = renderManual;
-$('#event-select').onchange = async event => { await stopCamera(); state.eventId = Number(event.target.value); $('#checkin-result').hidden = true; refresh().catch(error => toast(error.message)); };
+$('#search').oninput = renderGuests; $('#status-filter').onchange = renderGuests; $('#mail-filter').onchange = renderGuests;
+$('#event-select').onchange = event => { state.eventId = Number(event.target.value); refresh().catch(error => toast(error.message)); };
+$('#manage-operators').onclick = async () => {
+  try {
+    const operators = await api(`${eventPath()}/operators`);
+    const path = eventPath();
+    modal(`<p class="eyebrow">ACCESO SOLO A ESTE EVENTO</p><h2>Asignar operarios</h2><p class="muted">Estas cuentas podrán escanear y acreditar desde la aplicación móvil. No tendrán acceso a la planificación.</p><form id="modal-form"><div class="operator-list">${operators.map(operator => `<label><input type="checkbox" value="${operator.id}" ${operator.assigned ? 'checked' : ''}>${esc(operator.email)}</label>`).join('') || '<p class="muted">No hay cuentas de operario configuradas.</p>'}</div><p id="modal-error" class="form-error" role="alert"></p><button class="primary">Guardar accesos</button></form>`);
+    bindForm(async () => { const userIds = [...document.querySelectorAll('.operator-list input:checked')].map(input => Number(input.value)); await api(`${path}/operators`, { method: 'PUT', body: JSON.stringify({ userIds }) }); toast('Accesos actualizados.'); });
+  } catch (error) { toast(error.message); }
+};
 $('#add-guest').onclick = () => guestModal();
 $('#new-event').onclick = () => {
   modal('<p class="eyebrow">UN NUEVO ENCUENTRO</p><h2>Crea tu evento.</h2><form id="modal-form"><label>Nombre del evento<input name="name" maxlength="150" required placeholder="Encuentro de…"></label><label>Fecha y hora (hora de este dispositivo)<input name="date" type="datetime-local" required></label><label>Lugar<input name="location" maxlength="200" required placeholder="Espacio, ciudad"></label><p id="modal-error" class="form-error" role="alert"></p><button class="primary">Crear evento</button></form>');

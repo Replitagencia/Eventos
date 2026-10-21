@@ -24,9 +24,20 @@ Usar contraseñas distintas de al menos 16 caracteres. `.env` se crea con permis
 3. Establecer `NODE_ENV=production`, `HOST=0.0.0.0`, `PUBLIC_URL=https://<dominio>`, `COOKIE_SECURE=true` y ruta persistente de base de datos. Quitar la semilla al usar datos reales.
 4. Poner HTTPS delante del servicio. El proxy debe preservar `Origin`, permitir SSE, desactivar buffering para `/api/live` y aceptar conexiones largas con latidos de 15 segundos.
 5. Ejecutar una sola réplica. Restringir acceso directo al puerto del servicio. No habilitar proxy de confianza indiscriminadamente: actualmente el limitador observa la IP del proxy y puede compartir el cupo entre usuarios.
-6. Entrar desde dos celulares usando ese mismo dominio, permitir cámara y completar el guion de ensayo.
+6. Asignar las cuentas de operario al evento en el panel. Entrar desde los celulares a `https://<dominio>/acreditacion/`, permitir cámara y completar el guion de ensayo.
 
 Para un túnel HTTPS de demostración, mantener el servidor en `127.0.0.1`, poner la URL del túnel en `PUBLIC_URL` y `COOKIE_SECURE=true`, reiniciar y acceder exclusivamente por la URL HTTPS. Mantener encendido el computador. La URL de localhost solo sirve en el propio equipo.
+
+## Acceso de operarios
+
+1. El administrador entra al panel, selecciona el evento y abre **Acceso operarios → Asignar operarios**.
+2. Marca las cuentas autorizadas y guarda. Para revocar, desmarca la cuenta y guarda; las nuevas búsquedas e ingresos quedan bloqueados inmediatamente.
+3. Entrega al operario la dirección `/acreditacion/` y sus credenciales. Para la cuenta inicial usa `OPERATOR_EMAIL` y `OPERATOR_PASSWORD`; no compartir las credenciales de administrador.
+4. El operario inicia sesión en su aplicación móvil, selecciona uno de sus eventos asignados y escanea. Como alternativa, usa **Buscar persona** y confirma el nombre antes de acreditar.
+
+La aplicación móvil no muestra planificación, correos, informes, totales ni fichas de administración. Cada búsqueda entrega hasta 20 coincidencias y oculta parcialmente correo y RUT. Los nombres y empresas permiten identificar al asistente; los datos completos se consultan solo desde administración.
+
+Al actualizar de la versión anterior se cierran las sesiones de operarios y no se asignan eventos automáticamente. El administrador debe asignarlos. Solo una instalación de demostración totalmente nueva asigna su evento ficticio inicial al operario. El panel y la acreditación usan cookies distintas: cerrar la sesión de uno no cierra la del otro. No dejar una sesión de administrador abierta en un dispositivo que se entregue a un operario.
 
 ## Correo
 
@@ -51,7 +62,7 @@ No borrar la base para repetir la demo. Crear otro evento con nuevos invitados. 
 ## Limitaciones conocidas
 
 - Dos cuentas iniciales. Para atribución individual en un evento real hace falta gestión/provisión de cuentas por operador; compartir una cuenta identifica el rol, no la persona o el dispositivo.
-- No hay recuperación de contraseña, cierre masivo de sesiones desde la interfaz ni asignación de eventos.
+- No hay recuperación de contraseña ni cierre masivo de sesiones desde la interfaz. La asignación y revocación por evento sí están disponibles.
 - Importaciones grandes o archivos XLSX maliciosos requieren aislamiento y límites adicionales; solo el administrador debe cargar archivos de procedencia confiable.
 - SQLite/SSE en una instancia es el alcance demostrado; no hay alta disponibilidad.
 - El código registra el primer ingreso, pero no verificaciones físicas de identidad, salidas o reingresos.

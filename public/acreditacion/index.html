@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#213e34">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Acceso · Acreditación de eventos</title>
+  <link rel="stylesheet" href="/acreditacion/styles.css">
+  <script defer src="/vendor/html5-qrcode.min.js"></script>
+  <script defer src="/acreditacion/app.js"></script>
+</head>
+<body>
+  <header class="app-header"><div class="brand"><span>e.</span><div>eventos<small>CONTROL DE ACCESO</small></div></div><button id="logout" class="header-button" hidden>Salir</button></header>
+  <main>
+    <section id="login-view" hidden>
+      <div class="intro"><span class="access-mark" aria-hidden="true">▣</span><p class="eyebrow">ACCESO DE OPERARIOS</p><h1>Una gran<br>bienvenida.</h1><p>Ingresa con tu cuenta de acreditación<br>para recibir a los asistentes.</p></div>
+      <form id="login-form" class="card"><label>Correo del operario<input type="email" name="email" autocomplete="username" required></label><label>Contraseña<input type="password" name="password" autocomplete="current-password" required></label><button class="primary" type="submit">Entrar a acreditación</button><p id="login-error" class="error-text" role="alert"></p></form>
+    </section>
+    <section id="access-view" hidden>
+      <div class="session-line"><span id="operator-name"></span><span id="connection" role="status">Conectando…</span></div>
+      <section class="event-card"><p class="eyebrow">ESTÁS RECIBIENDO EN</p><h1 id="event-name">Sin evento asignado</h1><p id="event-info"></p><label id="event-picker" hidden>Cambiar evento<select id="event-select"></select></label></section>
+      <p id="no-events" class="empty" hidden>Tu cuenta todavía no tiene un evento asignado. Solicita el acceso al responsable del evento.</p>
+      <div id="tools" hidden>
+        <div class="tabs" role="tablist" aria-label="Método de acreditación"><button id="scan-tab" role="tab" aria-selected="true" aria-controls="scan-panel">Escanear QR</button><button id="search-tab" role="tab" aria-selected="false" aria-controls="search-panel">Buscar persona</button></div>
+        <section id="checkin-result" role="status" aria-live="assertive" hidden></section>
+        <section id="scan-panel" class="card" role="tabpanel" aria-labelledby="scan-tab">
+          <div id="camera-placeholder"><span aria-hidden="true">⌗</span><h2>Listo para escanear.</h2><p>Apunta la cámara al QR que te muestre el invitado.</p></div>
+          <div id="reader"></div>
+          <button id="start-camera" class="primary">Activar cámara</button><button id="stop-camera" class="secondary" hidden>Detener cámara</button>
+          <p class="hint">Permite el uso de la cámara. El QR puede estar en un celular o impreso.</p>
+          <details><summary>Ingresar código QR manualmente</summary><form id="qr-form"><label>Código QR<input name="qr" required placeholder="EVT:…" autocomplete="off" autocapitalize="off" spellcheck="false"></label><button class="secondary">Validar código</button></form></details>
+        </section>
+        <section id="search-panel" class="card" role="tabpanel" aria-labelledby="search-tab" hidden>
+          <h2>Encuentra al invitado.</h2><p>Si no tiene su QR, búscalo y confirma su ingreso.</p><label>Nombre, RUT o correo<input id="manual-search" type="search" maxlength="100" autocomplete="off" placeholder="Escribe al menos 2 caracteres"></label><div id="manual-results" aria-live="polite"><p class="empty">La búsqueda muestra hasta 20 coincidencias.</p></div>
+        </section>
+      </div>
+    </section>
+    <p id="notice" role="alert" hidden></p>
+    <footer>Acreditación de eventos · Agency Labs</footer>
+  </main>
+  <dialog id="confirmation"><h2>Confirmar ingreso</h2><p id="confirm-name"></p><p id="confirm-hint"></p><div class="dialog-actions"><button id="cancel-checkin" class="secondary">Cancelar</button><button id="confirm-checkin" class="primary">Confirmar acreditación</button></div></dialog>
+</body>
+</html>

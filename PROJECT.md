@@ -10,9 +10,9 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 
 ## Personas y permisos
 
-**Administrador:** crea eventos, agrega/edita/importa invitados, visualiza QR, envía invitaciones individuales y exporta reportes. También puede acreditar.
+**Administrador:** crea eventos, agrega/edita/importa invitados, visualiza QR, envía invitaciones individuales y exporta reportes. Asigna las cuentas que pueden acreditar cada evento y observa sus ingresos en vivo.
 
-**Operador:** consulta eventos e invitados, busca asistentes y acredita por QR o búsqueda manual. No importa, edita, exporta ni envía correo. En el MVP, todos los operadores acceden a todos los eventos de esta instalación; la asignación de eventos por operador queda pendiente.
+**Operador:** entra por `/acreditacion/`, con su cuenta y sesión propias. Solo ve los eventos asignados, el escáner, una búsqueda de hasta 20 coincidencias con identificadores parcialmente ocultos y el resultado del ingreso. No accede a planificación, listados completos, fichas administrativas, correo, reportes o estadísticas. La API aplica la separación aunque se intenten consultar esas rutas directamente.
 
 **Invitado:** recibe directamente la invitación diseñada y su QR personal en el primer correo, y lo presenta en el acceso. No hay formulario de registro ni confirmación de asistencia previa al QR. No necesita instalar una aplicación ni tener cuenta. El QR es una credencial transferible: el sistema impide repetir el ingreso, pero no verifica identidad física.
 
@@ -21,7 +21,7 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 1. Crear evento con nombre, fecha/hora y ubicación.
 2. Cargar lista CSV/Excel y revisar invitados/duplicados.
 3. Revisar la vista previa personalizada (destinatario, asunto, fecha, lugar y QR) y enviar el primer correo con el pase de ingreso incluido. El envío requiere remitente configurado; la vista previa y descarga funcionan sin correo.
-4. Iniciar sesión de operador en otro navegador o celular.
+4. Asignar el operario al evento desde Acceso operarios y abrir `/acreditacion/` en su celular con las credenciales de operario.
 5. Escanear o buscar y registrar el ingreso.
 6. Ver “ACREDITADO”; repetir el QR y ver “YA INGRESÓ”.
 7. Ver el dashboard actualizado y descargar el reporte final.
@@ -35,7 +35,7 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 | Importación | CSV y XLSX; errores por fila; duplicados omitidos |
 | QR | Token aleatorio de 256 bits, ligado al evento y al invitado |
 | Correo | Invitación HTML personalizada con QR integrado, vista previa, SMTP individual y registro de estado |
-| Acreditación | Cámara web, código pegado y búsqueda manual |
+| Acreditación | Aplicación móvil y API independientes, cámara web, código pegado y búsqueda limitada |
 | Concurrencia | Actualización condicional atómica que admite un solo ingreso |
 | Panel | Totales, acreditados, pendientes, porcentaje y últimas llegadas |
 | Reportes | CSV de invitados/ingresos y CSV independiente del historial de correos |
@@ -79,6 +79,10 @@ El historial conserva destinatario, nombre, remitente, asunto, fecha, administra
 
 ## Próxima etapa
 
-Gestión de usuarios y recuperación de claves; permisos por evento; envío masivo con cola y control de reintentos; estados de entrega/rebote mediante proveedor; historial de cambios e invalidación/reemisión de QR; invitación web personal; filtros y reportes XLSX; organización por cliente; PostgreSQL y distribución de cambios entre instancias si se necesita escalar.
+Gestión de usuarios y recuperación de claves; envío masivo con cola y control de reintentos; estados de entrega/rebote mediante proveedor; historial de cambios e invalidación/reemisión de QR; invitación web personal; filtros y reportes XLSX; organización por cliente; PostgreSQL y distribución de cambios entre instancias si se necesita escalar.
 
 No forman parte de este MVP: ventas/pagos, asientos, accesos múltiples, acreditación sin conexión, biometría, garantías de entrega de correo ni seguimiento de aperturas. Sin conexión no se confirma el ingreso: el servidor es la fuente de verdad.
+
+## Separación de la operación móvil
+
+La acreditación es una aplicación de acceso separada de la planificación, con HTML, estilos, JavaScript, inicio de sesión y API propios. Comparte únicamente el servidor y la base central para que los ingresos se reflejen en la administración. No es una aplicación nativa ni un servicio alojado en otro dominio; esas opciones se pueden evaluar después. El operario no navega el panel administrativo ni descarga su información.

@@ -15,7 +15,7 @@ let db, app, server, base, adminCookie, operatorCookie, directory;
 const deliveries = [];
 let rejectMail = false;
 const config = { publicUrl: 'http://localhost:3000', secureCookie: false, adminEmail: 'admin@test.local', adminPassword: 'a-secure-admin-password', operatorEmail: 'operator@test.local', operatorPassword: 'a-secure-operator-password', seedDemo: true, mailEnabled: false };
-async function request(path, { method = 'GET', body, cookie = adminCookie, headers = {} } = {}) {
+async function request(path, { method = 'GET', body, cookie = path.startsWith('/api/operator/') ? operatorCookie : adminCookie, headers = {} } = {}) {
   const response = await fetch(`${base}${path}`, { method, headers: { 'X-Requested-With': 'eventos', ...(cookie ? { Cookie: cookie } : {}), ...(body && typeof body !== 'object' ? {} : body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? Buffer.isBuffer(body) ? body : JSON.stringify(body) : undefined });
   const data = response.headers.get('Content-Type')?.includes('application/json') ? await response.json() : await response.text();
   return { status: response.status, data, response };
@@ -31,7 +31,7 @@ before(async () => {
   } }); server = app.listen(0, '127.0.0.1');
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); base = `http://127.0.0.1:${server.address().port}`;
   for (const role of ['admin','operator']) {
-    const result = await request('/api/login', { method: 'POST', cookie: '', body: { email: config[`${role}Email`], password: config[`${role}Password`] } });
+    const result = await request(role === 'admin' ? '/api/login' : '/api/operator/login', { method: 'POST', cookie: '', body: { email: config[`${role}Email`], password: config[`${role}Password`] } });
     assert.equal(result.status, 200); const cookie = result.response.headers.get('set-cookie').split(';')[0];
     if (role === 'admin') adminCookie = cookie; else operatorCookie = cookie;
   }
@@ -40,17 +40,17 @@ after(async () => { app.locals.closeStreams(); await new Promise(resolve => serv
 
 test('acceso autenticado, roles y protección de origen', async () => {
   assert.equal((await request('/api/events', { cookie: '' })).status, 401);
-  assert.equal((await request('/api/events', { method: 'POST', cookie: operatorCookie, body: { name: 'No autorizado' } })).status, 403);
-  assert.equal((await request('/api/events/1/report.csv', { cookie: operatorCookie })).status, 403);
-  assert.equal((await request('/api/events/1/guests/1/qr', { cookie: operatorCookie })).status, 403);
-  assert.equal((await request('/api/events/1/guests/1/detail', { cookie: operatorCookie })).status, 403);
-  assert.equal((await request('/api/events/1/email-report.csv', { cookie: operatorCookie })).status, 403);
-  assert.equal((await request('/api/events/1/checkin', { method: 'POST', headers: { Origin: 'https://otro.example' }, body: { guestId: 1 } })).status, 403);
-  assert.equal((await request('/api/events/1/checkin', { method: 'POST', headers: { 'X-Requested-With': '' }, body: { guestId: 1 } })).status, 403);
+  assert.equal((await request('/api/events', { method: 'POST', cookie: operatorCookie, body: { name: 'No autorizado' } })).status, 401);
+  assert.equal((await request('/api/events/1/report.csv', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/events/1/guests/1/qr', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/events/1/guests/1/detail', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/events/1/email-report.csv', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', headers: { Origin: 'https://otro.example' }, body: { guestId: 1 } })).status, 403);
+  assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', headers: { 'X-Requested-With': '' }, body: { guestId: 1 } })).status, 403);
 });
 test('20 solicitudes concurrentes producen exactamente un ingreso y conservan su auditoría', async () => {
   const guest = db.prepare('SELECT * FROM guests WHERE id=1').get();
-  const results = await Promise.all(Array.from({ length: 20 }, () => request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr: `EVT:1:${guest.token}` } })));
+  const results = await Promise.all(Array.from({ length: 20 }, () => request('/api/operator/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr: `EVT:1:${guest.token}` } })));
   assert.equal(results.filter(r => r.status === 200).length, 1);
   assert.equal(results.filter(r => r.status === 409).length, 19);
   const saved = db.prepare('SELECT * FROM guests WHERE id=1').get();
@@ -60,25 +60,66 @@ test('20 solicitudes concurrentes producen exactamente un ingreso y conservan su
   assert.equal(anotherConnection.prepare('SELECT checked_at FROM guests WHERE id=1').get().checked_at, saved.checked_at);
   anotherConnection.close();
 });
+test('operario aislado de planificación: sesiones propias, datos mínimos y eventos asignados', async () => {
+  assert.equal((await request('/api/login', { method: 'POST', cookie: '', body: { email: config.operatorEmail, password: config.operatorPassword } })).status, 401);
+  assert.equal((await request('/api/operator/login', { method: 'POST', cookie: '', body: { email: config.adminEmail, password: config.adminPassword } })).status, 401);
+  const operatorToken = operatorCookie.split('=')[1];
+  const adminToken = adminCookie.split('=')[1];
+  for (const path of ['/api/me','/api/events','/api/events/1/guests','/api/events/1/operators','/api/live','/api/events/1/report.csv','/api/events/1/email-report.csv']) {
+    assert.equal((await request(path, { cookie: operatorCookie })).status, 401);
+    assert.equal((await request(path, { cookie: `eventos_session=${operatorToken}` })).status, 403);
+  }
+  assert.equal((await request('/api/operator/events', { cookie: `eventos_operator_session=${adminToken}` })).status, 403);
+  const events = (await request('/api/operator/events')).data;
+  assert.equal(events.length, 1);
+  assert.deepEqual(Object.keys(events[0]).sort(), ['id','name','date','location'].sort());
+  const result = await request('/api/operator/events/1/search?q=Sofia');
+  assert.equal(result.status, 200); assert.equal(result.data[0].name, 'Sofía Muñoz');
+  assert.deepEqual(Object.keys(result.data[0]).sort(), ['id','name','company','email_hint','rut_hint','checked_at'].sort());
+  assert.notEqual(result.data[0].email_hint, 'invitado1@example.com');
+  assert.equal((await request('/api/operator/events/1/search?q=')).status, 400);
+  assert.equal((await request('/api/operator/events/1/guests')).status, 404);
+  assert.equal((await request('/api/operator/events/1/report.csv')).status, 404);
+  assert.equal((await request('/api/events/1/checkin', { method: 'POST', body: { guestId: 4 } })).status, 404);
+});
+test('asignar y revocar evento aplica inmediatamente a búsqueda y check-in', async () => {
+  const event = (await request('/api/events', { method: 'POST', body: { name: 'Evento privado', date: '2026-10-23T19:00:00-03:00', location: 'Otro lugar' } })).data;
+  const path = `/api/operator/events/${event.id}`;
+  const operator = db.prepare("SELECT id FROM users WHERE role='operator'").get();
+  const administrator = db.prepare("SELECT id FROM users WHERE role='admin'").get();
+  assert.equal((await request(`${path}/search?q=persona`)).status, 403);
+  assert.equal((await request(`${path}/checkin`, { method: 'POST', body: { guestId: 1 } })).status, 403);
+  assert.equal((await request(`/api/events/${event.id}/operators`, { method: 'PUT', body: { userIds: [administrator.id] } })).status, 400);
+  assert.equal((await request(`/api/events/${event.id}/operators`, { method: 'PUT', body: { userIds: [operator.id] } })).status, 200);
+  assert.equal((await request(`${path}/search?q=persona`)).status, 200);
+  assert.ok((await request('/api/operator/events')).data.some(e => e.id === event.id));
+  assert.equal((await request(`/api/events/${event.id}/operators`, { method: 'PUT', body: { userIds: [] } })).status, 200);
+  assert.equal((await request(`${path}/search?q=persona`)).status, 403);
+  assert.equal((await request(`${path}/checkin`, { method: 'POST', body: { guestId: 1 } })).status, 403);
+  assert.ok(!(await request('/api/operator/events')).data.some(e => e.id === event.id));
+});
 test('el QR generado se decodifica y no expone nombre, RUT o correo', async () => {
   const response = await fetch(`${base}/api/events/1/guests/2/qr`, { headers: { Cookie: adminCookie } });
   assert.equal(response.status, 200);
   const png = PNG.sync.read(Buffer.from(await response.arrayBuffer()));
   const decoded = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
   assert.match(decoded.data, /^EVT:1:[A-Za-z0-9_-]{43}$/);
-  const result = await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr: decoded.data } });
+  const result = await request('/api/operator/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr: decoded.data } });
   assert.equal(result.status, 200);
 });
 test('rechaza QR inventado y QR válido de otro evento', async () => {
   const created = await request('/api/events', { method: 'POST', body: { name: 'Segundo evento', date: '2026-10-22T19:00:00-03:00', location: 'Santiago' } });
   const guest = db.prepare('SELECT token FROM guests WHERE id=3').get();
-  assert.equal((await request(`/api/events/${created.data.id}/checkin`, { method: 'POST', body: { qr: `EVT:1:${guest.token}` } })).status, 400);
-  assert.equal((await request('/api/events/1/checkin', { method: 'POST', body: { qr: 'inventado' } })).status, 400);
+  assert.equal((await request(`/api/operator/events/${created.data.id}/checkin`, { method: 'POST', body: { guestId: 3 } })).status, 403);
+  const operator = db.prepare("SELECT id FROM users WHERE role='operator'").get();
+  assert.equal((await request(`/api/events/${created.data.id}/operators`, { method: 'PUT', body: { userIds: [operator.id] } })).status, 200);
+  assert.equal((await request(`/api/operator/events/${created.data.id}/checkin`, { method: 'POST', body: { qr: `EVT:1:${guest.token}` } })).status, 400);
+  assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', body: { qr: 'inventado' } })).status, 400);
   assert.equal(db.prepare('SELECT checked_at FROM guests WHERE id=3').get().checked_at, null);
 });
 test('acreditación manual se audita y no permite repetir', async () => {
-  assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { guestId: 3 } })).status, 200);
-  assert.equal((await request('/api/events/1/checkin', { method: 'POST', body: { guestId: 3 } })).status, 409);
+  assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { guestId: 3 } })).status, 200);
+  assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', body: { guestId: 3 } })).status, 409);
   assert.equal(db.prepare('SELECT checkin_method FROM guests WHERE id=3').get().checkin_method, 'manual');
 });
 test('importa CSV con BOM, acentos, duplicados por correo/RUT y validación atómica', async () => {
@@ -118,7 +159,7 @@ test('correo deshabilitado no marca invitaciones como enviadas', async () => {
 test('vista previa privada y primer correo incluyen el mismo QR, sin registro previo ni doble envío', async () => {
   const path = '/api/events/1/guests/7';
   assert.equal((await request(`${path}/invitation-preview`, { cookie: '' })).status, 401);
-  assert.equal((await request(`${path}/invitation-preview`, { cookie: operatorCookie })).status, 403);
+  assert.equal((await request(`${path}/invitation-preview`, { cookie: operatorCookie })).status, 401);
   assert.equal((await request('/api/events/999/guests/7/invitation-preview')).status, 404);
   const preview = await request(`${path}/invitation-preview`);
   assert.equal(preview.status, 200);
@@ -154,8 +195,8 @@ test('vista previa privada y primer correo incluyen el mismo QR, sin registro pr
     assert.ok(detail.data.deliveries[0].message_id);
     assert.ok(detail.data.guest.created_at);
     assert.equal(detail.data.guest.token, undefined);
-    assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 200);
-    assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 409);
+    assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 200);
+    assert.equal((await request('/api/operator/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 409);
   } finally { config.mailEnabled = false; }
 });
 test('la ficha conserva destinatario histórico al editar y muestra ingreso y operador', async () => {
@@ -207,14 +248,15 @@ test('el contenido personalizado del correo no interpreta HTML del invitado', as
   assert.match(preview.data.html, /Cliente &lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(preview.data.html, /<img src=x/);
 });
-test('los operadores reciben cambios en vivo y logout revoca la sesión', async () => {
+test('el panel recibe cambios del operario y salir de acreditación revoca solo esa sesión', async () => {
   const controller = new AbortController();
-  const response = await fetch(`${base}/api/live`, { headers: { Cookie: operatorCookie }, signal: controller.signal });
+  const response = await fetch(`${base}/api/live`, { headers: { Cookie: adminCookie }, signal: controller.signal });
   const reader = response.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /data: refresh/);
-  await request('/api/events/1/checkin', { method: 'POST', body: { guestId: 6 } });
+  await request('/api/operator/events/1/checkin', { method: 'POST', body: { guestId: 6 } });
   assert.match(new TextDecoder().decode((await reader.read()).value), /data: refresh/);
   controller.abort();
-  assert.equal((await request('/api/logout', { method: 'POST', cookie: operatorCookie })).status, 200);
-  assert.equal((await request('/api/events', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/operator/logout', { method: 'POST', cookie: operatorCookie })).status, 200);
+  assert.equal((await request('/api/operator/events', { cookie: operatorCookie })).status, 401);
+  assert.equal((await request('/api/events')).status, 200);
 });

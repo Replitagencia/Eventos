@@ -46,6 +46,8 @@ export function bootstrap(db, config) {
   if (config.adminEmail.toLowerCase() === config.operatorEmail.toLowerCase() || config.adminPassword === config.operatorPassword) throw new Error('Administrador y operador deben tener cuentas y claves distintas.');
   if (config.seedDemo && !db.prepare('SELECT id FROM events LIMIT 1').get()) {
     const event = db.prepare('INSERT INTO events(name,date,location) VALUES(?,?,?)').run('Encuentro Agency 2026', '2026-10-22T18:30:00-03:00', 'Santiago · Espacio de eventos');
+    const operator = db.prepare("SELECT id FROM users WHERE email=? AND role='operator'").get(config.operatorEmail.toLowerCase());
+    db.prepare('INSERT INTO operator_events(user_id,event_id) VALUES(?,?)').run(operator.id, Number(event.lastInsertRowid));
     const names = ['Sofía Muñoz', 'Benjamín Soto', 'Valentina Rojas', 'Mateo Silva', 'Isidora Torres', 'Vicente Castro', 'Antonia Díaz', 'Joaquín Pérez', 'Florencia Vega', 'Agustín Reyes', 'Emilia López', 'Tomás Fuentes'];
     names.forEach((name, i) => db.prepare('INSERT INTO guests(event_id,name,email,company,token) VALUES(?,?,?,?,?)').run(Number(event.lastInsertRowid), name, `invitado${i + 1}@example.com`, ['Agency Labs', 'Estudio Norte', 'Independiente'][i % 3], token()));
   }

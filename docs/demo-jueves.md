@@ -5,7 +5,7 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 ## Preparar
 
 1. Arrancar la aplicación e ingresar como administrador con los valores de `.env`.
-2. Abrir otro navegador/perfil como operador. Para celulares reales, usar la misma dirección HTTPS en ambos dispositivos.
+2. En **Acceso operarios**, asignar la cuenta al evento. Abrir otro navegador/perfil en `/acreditacion/` como operario. Para celulares reales, usar el dominio HTTPS con esa ruta.
 3. Tener un QR abierto en otra pantalla o impreso; un teléfono no puede apuntar su cámara a su propia pantalla.
 4. Usar invitados ficticios y no compartir contraseñas en la presentación.
 5. El primer correo incluye directamente el QR; no se requiere registro ni confirmación de asistencia. Si el correo es parte de la demostración, completar SMTP y hacer antes un envío autorizado a una dirección de prueba controlada. Sin SMTP, mostrar y descargar QR.
@@ -25,12 +25,13 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 | 6–7 min | Abrir Ver ficha y volver al panel | Datos, correo, hora de ingreso y operador |
 | 7–8 min | Filtrar invitados y descargar los reportes | CSV de invitados/ingresos e historial de correos |
 
-La cámara se detiene tras leer un QR para permitir revisar el resultado; pulsar “Activar cámara” para el siguiente invitado.
+La cámara se detiene tras leer un QR para permitir revisar el resultado; pulsar “Escanear siguiente” para el siguiente invitado.
 
 ## Ensayos antes de presentarlo
 
 - Dos operadores escanean el mismo QR al mismo tiempo: solo uno debe acreditar.
 - Un QR de otro evento se rechaza.
+- El operario no ve planificación ni invitados completos. Al revocarle un evento, deja de poder buscar y acreditar en él.
 - Una persona sin QR se encuentra por búsqueda manual.
 - Desconectar temporalmente un dispositivo: debe mostrar reconexión y nunca confirmar un ingreso sin respuesta del servidor.
 - Reiniciar la aplicación: invitados e ingresos siguen presentes.

@@ -3,7 +3,7 @@ export function migrate(db) {
   db.exec('BEGIN IMMEDIATE');
   try {
     const version = db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 2) throw new Error('La base pertenece a una versión más reciente de Eventos.');
+    if (version > 3) throw new Error('La base pertenece a una versión más reciente de Eventos.');
     if (version < 2) {
       db.exec(`
         ALTER TABLE guests ADD COLUMN created_at TEXT;
@@ -29,6 +29,15 @@ export function migrate(db) {
         CREATE INDEX email_deliveries_guest ON email_deliveries(guest_id,id);
         PRAGMA user_version=2;
       `);
+    }
+    if (version < 3) {
+      db.exec(`CREATE TABLE operator_events (
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        event_id INTEGER NOT NULL REFERENCES events(id),
+        PRIMARY KEY(user_id,event_id)
+      );
+      DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role='operator');
+      PRAGMA user_version=3;`);
     }
     db.exec('COMMIT');
   } catch (error) {

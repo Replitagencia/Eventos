@@ -12,21 +12,22 @@ npm run setup
 npm start
 ```
 
-Abre **http://localhost:3000**. `npm run setup` crea `.env` con contraseñas aleatorias: usa `ADMIN_EMAIL` + `ADMIN_PASSWORD` para administrar y `OPERATOR_EMAIL` + `OPERATOR_PASSWORD` para acreditar. No publica las claves. Si `.env` existe, no lo reemplaza.
+Abre **http://localhost:3000** para administrar y **http://localhost:3000/acreditacion/** para el operario móvil. `npm run setup` crea `.env` con contraseñas aleatorias: usa `ADMIN_EMAIL` + `ADMIN_PASSWORD` para administrar y `OPERATOR_EMAIL` + `OPERATOR_PASSWORD` para acreditar. No publica las claves. Si `.env` existe, no lo reemplaza.
 
-Con `SEED_DEMO=true`, el primer inicio crea un evento y 12 invitados **ficticios**. La información se conserva en `data/eventos.sqlite`; reiniciar no borra ingresos. No hay botón de reinicio destructivo. Para otro ensayo, crea un nuevo evento e importa la plantilla.
+Con `SEED_DEMO=true`, el primer inicio crea un evento y 12 invitados **ficticios**, y asigna ese evento de ejemplo a la cuenta de operario. En instalaciones existentes o eventos nuevos, asignar el acceso desde **Acceso operarios → Asignar operarios**. La información se conserva en `data/eventos.sqlite`; reiniciar no borra ingresos. No hay botón de reinicio destructivo. Para otro ensayo, crea un nuevo evento e importa la plantilla.
 
 ## Qué funciona
 
-- Acceso con contraseña, sesión privada de 12 horas y roles administrador/operador.
+- Dos aplicaciones con sesiones separadas: planificación para el administrador y acreditación móvil para el operario.
+- Asignación y revocación de acceso de operarios por evento desde el panel.
 - Crear eventos con fecha y lugar; seleccionar entre distintos eventos.
 - Registro interno con ficha por invitado: datos, fecha de alta, correos e ingreso. Agregar, editar y buscar por nombre, correo, RUT o empresa.
 - Filtrar por asistencia y estado de correo; consultar intentos enviados o por revisar, con destinatario y administrador solicitante.
 - Importar `.csv` o `.xlsx`, hasta 1.000 filas / 2 MB. Valida antes de insertar y omite duplicados por correo o RUT dentro del evento.
 - Generar, visualizar y descargar un QR único por invitado/evento.
-- Escanear desde la cámara del navegador o acreditar manualmente con confirmación.
+- Escanear desde la aplicación móvil independiente o buscar asistentes y acreditar manualmente con confirmación. La búsqueda devuelve hasta 20 coincidencias, con correo y RUT parcialmente ocultos.
 - Registrar un único ingreso con fecha, método y operador; rechazar QR inválido o de otro evento.
-- Actualizar paneles y listas de operadores conectados mediante eventos del servidor (SSE).
+- Actualizar el panel administrador en vivo mediante SSE. La aplicación de acceso consulta permisos y búsquedas activas cada 15 segundos; cada acreditación se valida inmediatamente en el servidor.
 - Exportar un CSV de invitados/ingresos y otro del historial de correos. Excel puede abrirlos.
 - Revisar y enviar una invitación HTML personalizada con el QR integrado en el primer correo cuando se configura SMTP. El invitado no necesita registrarse ni confirmar antes. El envío está desactivado por defecto.
 
@@ -64,7 +65,8 @@ En equipos con Chrome instalado se puede usar `PLAYWRIGHT_CHROME=1 npm run test:
 
 ```text
 src/                  API, sesiones, datos, importación y correo
-public/               Panel web responsive y plantilla CSV
+public/               Panel administrador y plantilla CSV
+public/acreditacion/   Aplicación móvil exclusiva de operarios
 scripts/setup.js       Configuración local con claves únicas
 tests/                Pruebas de API e interfaz
 docs/                 Arquitectura, operación y demostración
