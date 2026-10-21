@@ -1,0 +1,160 @@
+import express from 'express';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import QRCode from 'qrcode';
+import nodemailer from 'nodemailer';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { token, passwordMatches } from './db.js';
+import { parseImport, validateGuest, csvCell } from './import.js';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const fail = (status, message) => Object.assign(new Error(message), { status });
+export function createApp(db, config) {
+  const app = express();
+  const streams = new Set();
+  app.locals.closeStreams = () => { for (const stream of streams) stream.res.end(); };
+  const broadcast = () => { for (const stream of streams) stream.res.write('data: refresh\n\n'); };
+  app.disable('x-powered-by');
+  app.use(helmet({ contentSecurityPolicy: { directives: { 'img-src': ["'self'", 'data:'], 'script-src': ["'self'"], 'upgrade-insecure-requests': config.secureCookie ? [] : null } } }));
+  app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    if (!['GET','HEAD','OPTIONS'].includes(req.method) && (req.get('X-Requested-With') !== 'eventos' || (req.get('Origin') && req.get('Origin') !== new URL(config.publicUrl).origin))) return res.status(403).json({ error: 'Solicitud no autorizada.' });
+    next();
+  });
+  app.use(express.json({ limit: '50kb' }));
+  app.use('/api', (req, _res, next) => {
+    const sessionToken = /(?:^|;\s*)eventos_session=([A-Za-z0-9_-]+)/.exec(req.get('Cookie') || '')?.[1];
+    req.sessionToken = sessionToken;
+    req.user = sessionToken && db.prepare('SELECT users.id,users.email,users.role,sessions.expires FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>?').get(sessionToken, Date.now());
+    next();
+  });
+  app.post('/api/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Demasiados intentos. Intenta en 15 minutos.' } }), (req, res) => {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+    if (password.length > 256 || !user || !passwordMatches(password, user.password)) throw fail(401, 'Correo o contraseña incorrectos.');
+    const session = token();
+    db.prepare('DELETE FROM sessions WHERE expires<? OR token=?').run(Date.now(), req.sessionToken || '');
+    db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(session, user.id, Date.now() + 12 * 3600 * 1000);
+    res.cookie('eventos_session', session, { httpOnly: true, sameSite: 'strict', secure: config.secureCookie, maxAge: 12 * 3600 * 1000, path: '/' });
+    res.json({ email: user.email, role: user.role });
+  });
+  app.use('/api', (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Inicia sesión para continuar.' }));
+  const admin = (req, _res, next) => req.user.role === 'admin' ? next() : next(fail(403, 'Solo el administrador puede realizar esta acción.'));
+  app.get('/api/me', (req, res) => res.json({ email: req.user.email, role: req.user.role, mailEnabled: config.mailEnabled }));
+  app.post('/api/logout', (req, res) => {
+    db.prepare('DELETE FROM sessions WHERE token=?').run(req.sessionToken);
+    for (const stream of streams) if (stream.session === req.sessionToken) stream.res.end();
+    res.clearCookie('eventos_session', { path: '/' }).json({ ok: true });
+  });
+  app.get('/api/live', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders(); res.write('data: refresh\n\n');
+    const stream = { res, session: req.sessionToken }; streams.add(stream);
+    const timer = setInterval(() => {
+      if (Date.now() >= req.user.expires) return res.end();
+      res.write(': heartbeat\n\n');
+    }, 15000);
+    res.on('close', () => { clearInterval(timer); streams.delete(stream); });
+  });
+  app.get('/api/events', (_req, res) => res.json(db.prepare(`SELECT events.*, COUNT(guests.id) total, COUNT(guests.checked_at) checked FROM events LEFT JOIN guests ON guests.event_id=events.id GROUP BY events.id ORDER BY events.date DESC`).all()));
+  app.post('/api/events', admin, (req, res) => {
+    const { name, date, location } = req.body;
+    if (typeof name !== 'string' || !name.trim() || name.length > 150 || typeof location !== 'string' || !location.trim() || location.length > 200 || typeof date !== 'string' || !/(Z|[+-]\d\d:\d\d)$/.test(date) || Number.isNaN(Date.parse(date))) throw fail(400, 'Completa nombre, lugar y una fecha con zona horaria.');
+    const result = db.prepare('INSERT INTO events(name,date,location) VALUES(?,?,?)').run(name.trim(), new Date(date).toISOString(), location.trim());
+    broadcast(); res.status(201).json({ id: Number(result.lastInsertRowid) });
+  });
+  app.use('/api/events/:eventId', (req, _res, next) => {
+    req.event = db.prepare('SELECT * FROM events WHERE id=?').get(req.params.eventId);
+    if (!req.event) return next(fail(404, 'Evento no encontrado.'));
+    next();
+  });
+  const publicGuestColumns = 'id,name,email,rut,company,checked_at,checkin_method,invitation_status,sent_at';
+  app.get('/api/events/:eventId/guests', (req, res) => {
+    res.json(db.prepare(`SELECT ${publicGuestColumns} FROM guests WHERE event_id=? ORDER BY name COLLATE NOCASE`).all(req.event.id));
+  });
+  app.post('/api/events/:eventId/guests', admin, (req, res) => {
+    const guest = validateGuest(req.body);
+    const result = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token) VALUES(?,?,?,?,?,?)').run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token());
+    broadcast(); res.status(201).json({ id: Number(result.lastInsertRowid) });
+  });
+  app.patch('/api/events/:eventId/guests/:guestId', admin, (req, res) => {
+    const guest = validateGuest(req.body);
+    const current = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
+    if (!current) throw fail(404, 'Invitado no encontrado.');
+    if (current.invitation_status === 'sending') throw fail(409, 'Espera a que termine el envío.');
+    db.prepare('UPDATE guests SET name=?,email=?,rut=?,company=?,invitation_status=?,sent_at=? WHERE id=?').run(guest.name, guest.email, guest.rut, guest.company, guest.email === current.email ? current.invitation_status : 'pending', guest.email === current.email ? current.sent_at : null, current.id);
+    broadcast(); res.json({ ok: true });
+  });
+  app.post('/api/events/:eventId/import', admin, express.raw({ type: 'application/octet-stream', limit: '2mb' }), async (req, res) => {
+    if (!Buffer.isBuffer(req.body)) throw fail(400, 'Selecciona un archivo CSV o Excel.');
+    const guests = await parseImport(req.body, req.get('X-Filename') || '');
+    let imported = 0, duplicates = 0;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const insert = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING');
+      for (const guest of guests) {
+        const result = insert.run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token());
+        if (result.changes) imported++; else duplicates++;
+      }
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    broadcast(); res.json({ imported, duplicates });
+  });
+  app.get('/api/events/:eventId/guests/:guestId/qr', admin, async (req, res) => {
+    const guest = db.prepare('SELECT token FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
+    if (!guest) throw fail(404, 'Invitado no encontrado.');
+    res.type('png').send(await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 }));
+  });
+  app.post('/api/events/:eventId/checkin', (req, res) => {
+    let guest;
+    if (req.body.qr) {
+      const match = /^EVT:(\d+):([A-Za-z0-9_-]{43})$/.exec(String(req.body.qr));
+      if (!match || Number(match[1]) !== req.event.id) throw fail(400, 'QR INVÁLIDO para este evento.');
+      guest = db.prepare('SELECT * FROM guests WHERE event_id=? AND token=?').get(req.event.id, match[2]);
+    } else if (Number.isInteger(req.body.guestId)) {
+      guest = db.prepare('SELECT * FROM guests WHERE event_id=? AND id=?').get(req.event.id, req.body.guestId);
+    }
+    if (!guest) throw fail(400, 'QR INVÁLIDO o invitado no encontrado.');
+    const now = new Date().toISOString();
+    const result = db.prepare('UPDATE guests SET checked_at=?,checked_by=?,checkin_method=? WHERE id=? AND event_id=? AND checked_at IS NULL').run(now, req.user.id, req.body.qr ? 'qr' : 'manual', guest.id, req.event.id);
+    if (!result.changes) return res.status(409).json({ error: 'YA INGRESÓ', name: guest.name, checked_at: db.prepare('SELECT checked_at FROM guests WHERE id=?').get(guest.id).checked_at });
+    broadcast(); res.json({ message: 'ACREDITADO', name: guest.name, checked_at: now });
+  });
+  app.get('/api/events/:eventId/report.csv', admin, (req, res) => {
+    const guests = db.prepare('SELECT guests.*,users.email operator FROM guests LEFT JOIN users ON users.id=guests.checked_by WHERE event_id=? ORDER BY name').all(req.event.id);
+    const rows = [['Nombre','Email','RUT','Empresa','Estado','Ingreso UTC','Operador','Método','Invitación'], ...guests.map(g => [g.name,g.email,g.rut,g.company,g.checked_at ? 'Acreditado' : 'Pendiente',g.checked_at,g.operator,g.checkin_method,g.invitation_status])];
+    res.attachment(`evento-${req.event.id}-reporte.csv`).type('text/csv; charset=utf-8').send('\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n'));
+  });
+  app.post('/api/events/:eventId/guests/:guestId/invite', admin, async (req, res) => {
+    if (!config.mailEnabled || !config.smtp?.host || !config.mailFrom) throw fail(409, 'Correo pendiente de configuración SMTP. Puedes mostrar o descargar el QR.');
+    const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
+    if (!guest) throw fail(404, 'Invitado no encontrado.');
+    const claim = db.prepare("UPDATE guests SET invitation_status='sending' WHERE id=? AND invitation_status IN ('pending','failed')").run(guest.id);
+    if (!claim.changes) throw fail(409, 'La invitación ya fue enviada o está en proceso.');
+    try {
+      const qr = await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400 });
+      const info = await nodemailer.createTransport({ ...config.smtp, connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000 }).sendMail({
+        from: config.mailFrom, to: guest.email, subject: `Tu invitación · ${req.event.name}`,
+        text: `Hola ${guest.name},\n\nTe esperamos en ${req.event.name}.\nFecha: ${new Date(req.event.date).toLocaleString('es-CL', { timeZone: 'America/Santiago' })} (Santiago)\nLugar: ${req.event.location}\n\nPresenta el QR adjunto al llegar. Es personal y permite un único ingreso.`,
+        attachments: [{ filename: 'invitacion-qr.png', content: qr, contentType: 'image/png' }]
+      });
+      if (!info.accepted?.length) throw new Error('Recipient rejected');
+      db.prepare("UPDATE guests SET invitation_status='sent',sent_at=? WHERE id=?").run(new Date().toISOString(), guest.id);
+      broadcast(); res.json({ ok: true });
+    } catch {
+      db.prepare("UPDATE guests SET invitation_status='failed' WHERE id=?").run(guest.id);
+      broadcast(); throw fail(502, 'No se pudo confirmar el envío. Revisa SMTP antes de reintentar.');
+    }
+  });
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
+  app.get('/vendor/html5-qrcode.min.js', (_req, res) => res.sendFile(resolve(root, 'node_modules/html5-qrcode/html5-qrcode.min.js')));
+  app.use(express.static(resolve(root, 'public')));
+  app.use((error, _req, res, _next) => {
+    const duplicate = /UNIQUE constraint failed/.test(error.message);
+    const status = duplicate ? 409 : error.status || (error instanceof SyntaxError || /Fila |Nombre obligatorio|Correo electrónico|RUT o empresa|Formato permitido|Importa entre|Usa la primera hoja|Invalid Record|Invalid Closing|Quote Not Closed/.test(error.message) ? 400 : 500);
+    res.status(status).json({ error: duplicate ? 'Ya existe un invitado con ese correo o RUT en el evento.' : status === 500 ? 'No se pudo completar la operación.' : error.message });
+  });
+  return app;
+}
