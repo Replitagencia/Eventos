@@ -30,7 +30,7 @@ Para un túnel HTTPS de demostración, mantener el servidor en `127.0.0.1`, pone
 
 ## Correo
 
-Configurar un proveedor SMTP y remitente autorizado, incluyendo autenticación del dominio según sus instrucciones. Establecer `MAIL_ENABLED=true` y reiniciar. En Invitados → Ver QR → Enviar invitación, la aplicación muestra nombre/destinatario antes de confirmar. El mensaje incluye nombre, evento, fecha/lugar y PNG del QR adjunto.
+Configurar un proveedor SMTP y remitente autorizado, incluyendo autenticación del dominio según sus instrucciones. Establecer `MAIL_ENABLED=true` y reiniciar. En Invitados → Ver invitación → Enviar invitación, la aplicación muestra nombre/destinatario antes de confirmar. La vista previa muestra destinatario, asunto y el diseño del correo. El mensaje HTML incluye nombre, evento, fecha/lugar y el QR dentro del cuerpo mediante una imagen adjunta CID; también contiene una alternativa de texto. El QR llega en el primer correo, sin formulario ni confirmación previa de asistencia. Algunos clientes pueden ocultar imágenes: el QR también forma parte del mensaje como archivo PNG. La vista previa no envía correos ni cambia el estado de la invitación.
 
 No ejecutar envíos a los ejemplos de la semilla ni a listas reales sin instrucción del responsable. Un estado `sent` significa que SMTP aceptó el mensaje; podría rebotar después. No hay tracking de apertura. Credenciales SMTP no deben aparecer en capturas ni commits.
 

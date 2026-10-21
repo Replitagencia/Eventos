@@ -8,7 +8,7 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 2. Abrir otro navegador/perfil como operador. Para celulares reales, usar la misma dirección HTTPS en ambos dispositivos.
 3. Tener un QR abierto en otra pantalla o impreso; un teléfono no puede apuntar su cámara a su propia pantalla.
 4. Usar invitados ficticios y no compartir contraseñas en la presentación.
-5. Si el correo es parte de la demostración, completar SMTP y hacer antes un envío autorizado a una dirección de prueba controlada. Sin SMTP, mostrar y descargar QR.
+5. El primer correo incluye directamente el QR; no se requiere registro ni confirmación de asistencia. Si el correo es parte de la demostración, completar SMTP y hacer antes un envío autorizado a una dirección de prueba controlada. Sin SMTP, mostrar y descargar QR.
 
 ## Recorrido
 
@@ -18,7 +18,7 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 | 1–2 min | Crear un evento de ensayo | Nombre, fecha y ubicación |
 | 2–3 min | Importar `public/plantilla-invitados.csv` | 2 invitados nuevos |
 | 3 min | Volver a importar el archivo | 0 nuevos, 2 duplicados omitidos |
-| 3–4 min | Abrir “Ver QR” de un invitado | QR descargable y nombre |
+| 3–4 min | Abrir “Ver invitación” de un invitado | Correo diseñado, fecha/lugar y QR personal |
 | 4–5 min | Escanear desde el operador | “ACREDITADO” y hora |
 | 5 min | Volver a escanear el mismo QR | “YA INGRESÓ”; total sin duplicar |
 | 5–6 min | Buscar otro invitado y confirmar manualmente | Segundo ingreso registrado |

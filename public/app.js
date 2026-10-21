@@ -65,7 +65,7 @@ function renderGuests() {
   const query = $('#search').value.trim(); const filter = $('#status-filter').value;
   const guests = state.guests.filter(g => matches(g,query) && (filter === 'all' || (filter === 'checked' ? g.checked_at : !g.checked_at)));
   const statuses = { pending: 'Pendiente', sending: 'Enviando', sent: 'Enviada', failed: 'Fallida' };
-  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span></td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-qr="${g.id}">Ver QR</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}${!g.checked_at ? `<button class="table-action" data-manual="${g.id}">Acreditar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
+  $('#guest-rows').innerHTML = guests.map(g => `<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.email)}</small>${g.rut ? `<small>${esc(g.rut)}</small>` : ''}</td><td>${esc(g.company || '—')}</td><td><span class="badge">${statuses[g.invitation_status]}</span></td><td><span class="badge ${g.checked_at ? 'checked' : ''}">${g.checked_at ? '✓ Acreditado' : 'Pendiente'}</span>${g.checked_at ? `<small>${time(g.checked_at)}</small>` : ''}</td><td>${state.user.role === 'admin' ? `<button class="table-action" data-qr="${g.id}">Ver invitación</button><button class="table-action" data-edit="${g.id}">Editar</button>` : ''}${!g.checked_at ? `<button class="table-action" data-manual="${g.id}">Acreditar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No hay invitados que coincidan con la búsqueda.</div></td></tr>';
   $('#list-count').textContent = `${guests.length} de ${state.guests.length} invitados`;
 }
 function renderManual() {
@@ -80,7 +80,7 @@ function setView(view) {
   document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
   $('#page-title').textContent = { dashboard: 'El encuentro, en tus manos.', guests: 'Cada invitado importa.', scanner: 'Una gran bienvenida.' }[view];
 }
-function modal(html) { $('#modal-content').innerHTML = html; $('#modal').showModal(); }
+function modal(html) { $('#modal').classList.remove('invitation-modal'); $('#modal-content').innerHTML = html; $('#modal').showModal(); }
 function bindForm(handler) {
   $('#modal-form').onsubmit = async event => {
     event.preventDefault(); const button = event.submitter; button.disabled = true;
@@ -94,14 +94,20 @@ function guestModal(id) {
   modal(`<p class="eyebrow">LISTA DE INVITADOS</p><h2>${id ? 'Editar invitado' : 'Una nueva invitación.'}</h2><form id="modal-form">${[['name','Nombre completo','text',150],['email','Correo electrónico','email',254],['rut','RUT (opcional)','text',20],['company','Empresa (opcional)','text',150]].map(([key,label,type,max]) => `<label>${label}<input name="${key}" type="${type}" maxlength="${max}" value="${esc(guest[key] || '')}" ${['name','email'].includes(key) ? 'required' : ''}></label>`).join('')}<p id="modal-error" class="form-error" role="alert"></p><button class="primary">Guardar invitado</button></form>`);
   bindForm(async data => { await api(`${eventPath()}/guests${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(data) }); toast('Invitado guardado.'); });
 }
-function showQR(id) {
-  const guest = state.guests.find(g => g.id === id); const event = state.events.find(e => e.id === state.eventId);
-  const url = `${eventPath()}/guests/${id}/qr`;
-  modal(`<div class="modal-qr"><p class="eyebrow">TU INVITACIÓN PERSONAL</p><h2>${esc(guest.name)}</h2><p class="muted">${esc(event.name)}</p><img src="${url}" alt="QR de ingreso de ${esc(guest.name)}"><p class="muted">Presenta este código al llegar.<br>Válido para un único ingreso.</p><div class="actions"><a class="secondary" href="${url}" download="invitacion-qr.png">↓ Descargar QR</a>${state.user.mailEnabled && ['pending','failed'].includes(guest.invitation_status) ? `<button id="send-invite" class="primary">Enviar invitación</button>` : ''}</div><p class="file-note">${state.user.mailEnabled ? guest.invitation_status === 'sent' ? 'Invitación enviada al proveedor de correo.' : 'El correo incluye este QR como adjunto.' : 'Envío de correo pendiente de configuración SMTP.'}</p><p id="modal-error" class="form-error" role="alert"></p></div>`);
-  if ($('#send-invite')) $('#send-invite').onclick = () => {
-    modal(`<h2>Enviar invitación</h2><p>Se enviará el QR de <strong>${esc(guest.name)}</strong> a <strong>${esc(guest.email)}</strong>.</p><form id="modal-form"><p id="modal-error" class="form-error" role="alert"></p><button class="primary">Confirmar envío</button></form>`);
-    bindForm(async () => { await api(`${eventPath()}/guests/${id}/invite`, { method: 'POST' }); toast('Invitación aceptada por el proveedor de correo.'); });
-  };
+async function showInvitation(id) {
+  const guest = state.guests.find(g => g.id === id);
+  const path = `${eventPath()}/guests/${id}`;
+  const allowed = state.user.mailEnabled && ['pending','failed'].includes(guest.invitation_status);
+  try {
+    const preview = await api(`${path}/invitation-preview`);
+    modal(`<p class="eyebrow">VISTA PREVIA DEL CORREO</p><h2>Una invitación para ${esc(guest.name)}.</h2><dl class="email-summary"><dt>Para</dt><dd>${esc(preview.to)}</dd><dt>Asunto</dt><dd>${esc(preview.subject)}</dd><dt>Vista previa</dt><dd>${esc(preview.preheader)}</dd></dl><iframe id="invitation-preview" title="Correo de invitación" sandbox="" referrerpolicy="no-referrer"></iframe><div class="invitation-actions"><a class="secondary" href="${path}/qr" download="invitacion-qr.png">↓ Descargar QR</a><button id="send-invite" class="primary" ${allowed ? '' : 'disabled'}>${guest.invitation_status === 'sent' ? 'Invitación enviada' : guest.invitation_status === 'sending' ? 'Enviando…' : 'Enviar invitación'}</button></div><p class="file-note">${state.user.mailEnabled ? 'El primer correo incluye el QR personal. El invitado solo debe mostrarlo al llegar.' : 'Envío de correo pendiente de configuración SMTP.'}</p><p id="modal-error" class="form-error" role="alert"></p>`);
+    $('#modal').classList.add('invitation-modal');
+    $('#invitation-preview').srcdoc = preview.html;
+    $('#send-invite').onclick = () => {
+      modal(`<h2>Enviar invitación</h2><p>Se enviará la invitación con el QR personal de <strong>${esc(guest.name)}</strong> a <strong>${esc(guest.email)}</strong>.</p><p class="muted">La persona no necesita registrarse ni confirmar asistencia: recibirá su pase directamente en este correo.</p><form id="modal-form"><p id="modal-error" class="form-error" role="alert"></p><button class="primary">Confirmar envío</button></form>`);
+      bindForm(async () => { await api(`${path}/invite`, { method: 'POST' }); toast('Invitación aceptada por el proveedor de correo.'); });
+    };
+  } catch (error) { toast(error.message); }
 }
 async function checkin(body) {
   if (state.checking) return;
@@ -139,7 +145,7 @@ $('#qr-form').onsubmit = async event => { event.preventDefault(); const button =
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.view) setView(button.dataset.view);
-  if (button.dataset.qr) showQR(Number(button.dataset.qr));
+  if (button.dataset.qr) showInvitation(Number(button.dataset.qr));
   if (button.dataset.edit) guestModal(Number(button.dataset.edit));
   if (button.dataset.manual) {
     const guest = state.guests.find(g => g.id === Number(button.dataset.manual));

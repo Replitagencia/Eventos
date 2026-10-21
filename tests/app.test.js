@@ -6,11 +6,13 @@ import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import jsQR from 'jsqr';
 import { PNG } from 'pngjs';
+import nodemailer from 'nodemailer';
 import { openDatabase, bootstrap } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { csvCell } from '../src/import.js';
 
 let db, app, server, base, adminCookie, operatorCookie, directory;
+const deliveries = [];
 const config = { publicUrl: 'http://localhost:3000', secureCookie: false, adminEmail: 'admin@test.local', adminPassword: 'a-secure-admin-password', operatorEmail: 'operator@test.local', operatorPassword: 'a-secure-operator-password', seedDemo: true, mailEnabled: false };
 async function request(path, { method = 'GET', body, cookie = adminCookie, headers = {} } = {}) {
   const response = await fetch(`${base}${path}`, { method, headers: { 'X-Requested-With': 'eventos', ...(cookie ? { Cookie: cookie } : {}), ...(body && typeof body !== 'object' ? {} : body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? Buffer.isBuffer(body) ? body : JSON.stringify(body) : undefined });
@@ -20,7 +22,11 @@ async function request(path, { method = 'GET', body, cookie = adminCookie, heade
 before(async () => {
   directory = mkdtempSync(join(tmpdir(), 'eventos-tests-'));
   db = openDatabase(join(directory, 'test.sqlite')); bootstrap(db, config);
-  app = createApp(db, config); server = app.listen(0, '127.0.0.1');
+  app = createApp(db, config, { sendMail: async message => {
+    const rendered = await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(message);
+    deliveries.push({ message, mime: rendered.message.toString() });
+    return { accepted: [message.to] };
+  } }); server = app.listen(0, '127.0.0.1');
   await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); base = `http://127.0.0.1:${server.address().port}`;
   for (const role of ['admin','operator']) {
     const result = await request('/api/login', { method: 'POST', cookie: '', body: { email: config[`${role}Email`], password: config[`${role}Password`] } });
@@ -104,6 +110,47 @@ test('reporte incluye hora, operador y neutraliza fórmulas de Excel', async () 
 test('correo deshabilitado no marca invitaciones como enviadas', async () => {
   assert.equal((await request('/api/events/1/guests/5/invite', { method: 'POST' })).status, 409);
   assert.equal(db.prepare('SELECT invitation_status FROM guests WHERE id=5').get().invitation_status, 'pending');
+});
+test('vista previa privada y primer correo incluyen el mismo QR, sin registro previo ni doble envío', async () => {
+  const path = '/api/events/1/guests/7';
+  assert.equal((await request(`${path}/invitation-preview`, { cookie: '' })).status, 401);
+  assert.equal((await request(`${path}/invitation-preview`, { cookie: operatorCookie })).status, 403);
+  assert.equal((await request('/api/events/999/guests/7/invitation-preview')).status, 404);
+  const preview = await request(`${path}/invitation-preview`);
+  assert.equal(preview.status, 200);
+  assert.match(preview.data.html, /Hola, Antonia Díaz/);
+  assert.match(preview.data.html, /Santiago/);
+  assert.equal(preview.data.to, 'invitado7@example.com');
+  const previewImage = preview.data.html.match(/src="data:image\/png;base64,([^"]+)"/)[1];
+  const png = PNG.sync.read(Buffer.from(previewImage, 'base64'));
+  const qr = jsQR(new Uint8ClampedArray(png.data), png.width, png.height).data;
+  assert.equal(deliveries.length, 0);
+  assert.equal(db.prepare('SELECT invitation_status FROM guests WHERE id=7').get().invitation_status, 'pending');
+  config.mailEnabled = true; config.smtp = { host: 'smtp.test.local' }; config.mailFrom = 'eventos@example.com';
+  try {
+    const results = await Promise.all([1,2].map(() => request(`${path}/invite`, { method: 'POST' })));
+    assert.deepEqual(results.map(r => r.status).sort(), [200,409]);
+    assert.equal(deliveries.length, 1);
+    const { message, mime } = deliveries[0];
+    assert.equal(message.subject, preview.data.subject);
+    assert.match(message.html, /cid:invitacion-qr@eventos/);
+    assert.match(mime, /Content-ID: <invitacion-qr@eventos>/);
+    assert.match(mime, /Content-Type: text\/html/);
+    assert.match(mime, /Content-Type: text\/plain/);
+    const attachment = PNG.sync.read(message.attachments[0].content);
+    assert.equal(jsQR(new Uint8ClampedArray(attachment.data), attachment.width, attachment.height).data, qr);
+    const guest = db.prepare('SELECT * FROM guests WHERE id=7').get();
+    assert.equal(guest.invitation_status, 'sent'); assert.ok(guest.sent_at); assert.equal(guest.checked_at, null);
+    assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 200);
+    assert.equal((await request('/api/events/1/checkin', { method: 'POST', cookie: operatorCookie, body: { qr } })).status, 409);
+  } finally { config.mailEnabled = false; }
+});
+test('el contenido personalizado del correo no interpreta HTML del invitado', async () => {
+  const result = await request('/api/events/1/guests', { method: 'POST', body: { name: 'Cliente <img src=x onerror=alert(1)>', email: 'escape@example.com' } });
+  const preview = await request(`/api/events/1/guests/${result.data.id}/invitation-preview`);
+  assert.equal(preview.status, 200);
+  assert.match(preview.data.html, /Cliente &lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(preview.data.html, /<img src=x/);
 });
 test('los operadores reciben cambios en vivo y logout revoca la sesión', async () => {
   const controller = new AbortController();

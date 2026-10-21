@@ -7,10 +7,11 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { token, passwordMatches } from './db.js';
 import { parseImport, validateGuest, csvCell } from './import.js';
+import { renderInvitation } from './invitation.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fail = (status, message) => Object.assign(new Error(message), { status });
-export function createApp(db, config) {
+export function createApp(db, config, { sendMail } = {}) {
   const app = express();
   const streams = new Set();
   app.locals.closeStreams = () => { for (const stream of streams) stream.res.end(); };
@@ -107,6 +108,12 @@ export function createApp(db, config) {
     if (!guest) throw fail(404, 'Invitado no encontrado.');
     res.type('png').send(await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 }));
   });
+  app.get('/api/events/:eventId/guests/:guestId/invitation-preview', admin, async (req, res) => {
+    const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
+    if (!guest) throw fail(404, 'Invitado no encontrado.');
+    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
+    res.json({ to: guest.email, ...renderInvitation({ event: req.event, guest, qrSource }) });
+  });
   app.post('/api/events/:eventId/checkin', (req, res) => {
     let guest;
     if (req.body.qr) {
@@ -134,12 +141,17 @@ export function createApp(db, config) {
     const claim = db.prepare("UPDATE guests SET invitation_status='sending' WHERE id=? AND invitation_status IN ('pending','failed')").run(guest.id);
     if (!claim.changes) throw fail(409, 'La invitación ya fue enviada o está en proceso.');
     try {
-      const qr = await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400 });
-      const info = await nodemailer.createTransport({ ...config.smtp, connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000 }).sendMail({
-        from: config.mailFrom, to: guest.email, subject: `Tu invitación · ${req.event.name}`,
-        text: `Hola ${guest.name},\n\nTe esperamos en ${req.event.name}.\nFecha: ${new Date(req.event.date).toLocaleString('es-CL', { timeZone: 'America/Santiago' })} (Santiago)\nLugar: ${req.event.location}\n\nPresenta el QR adjunto al llegar. Es personal y permite un único ingreso.`,
-        attachments: [{ filename: 'invitacion-qr.png', content: qr, contentType: 'image/png' }]
-      });
+      const qr = await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
+      const cid = 'invitacion-qr@eventos';
+      const invitation = renderInvitation({ event: req.event, guest, qrSource: `cid:${cid}` });
+      const message = {
+        from: config.mailFrom, to: guest.email, subject: invitation.subject,
+        text: invitation.text, html: invitation.html,
+        attachments: [{ filename: 'invitacion-qr.png', content: qr, contentType: 'image/png', cid, contentDisposition: 'inline' }]
+      };
+      const info = await (sendMail
+        ? sendMail(message)
+        : nodemailer.createTransport({ ...config.smtp, connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000 }).sendMail(message));
       if (!info.accepted?.length) throw new Error('Recipient rejected');
       db.prepare("UPDATE guests SET invitation_status='sent',sent_at=? WHERE id=?").run(new Date().toISOString(), guest.id);
       broadcast(); res.json({ ok: true });

@@ -27,7 +27,7 @@ Con `SEED_DEMO=true`, el primer inicio crea un evento y 12 invitados **ficticios
 - Registrar un único ingreso con fecha, método y operador; rechazar QR inválido o de otro evento.
 - Actualizar paneles y listas de operadores conectados mediante eventos del servidor (SSE).
 - Exportar reporte CSV con estado, fecha UTC y operador. Excel puede abrirlo.
-- Enviar una invitación individual con QR adjunto cuando se configura SMTP. El envío está desactivado por defecto.
+- Revisar y enviar una invitación HTML personalizada con el QR integrado en el primer correo cuando se configura SMTP. El invitado no necesita registrarse ni confirmar antes. El envío está desactivado por defecto.
 
 ## Configuración y alcance
 

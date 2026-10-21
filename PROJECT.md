@@ -14,13 +14,13 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 
 **Operador:** consulta eventos e invitados, busca asistentes y acredita por QR o búsqueda manual. No importa, edita, exporta ni envía correo. En el MVP, todos los operadores acceden a todos los eventos de esta instalación; la asignación de eventos por operador queda pendiente.
 
-**Invitado:** recibe un QR por correo o por entrega del administrador y lo presenta en el acceso. No necesita instalar una aplicación ni tener cuenta. El QR es una credencial transferible: el sistema impide repetir el ingreso, pero no verifica identidad física.
+**Invitado:** recibe directamente la invitación diseñada y su QR personal en el primer correo, y lo presenta en el acceso. No hay formulario de registro ni confirmación de asistencia previa al QR. No necesita instalar una aplicación ni tener cuenta. El QR es una credencial transferible: el sistema impide repetir el ingreso, pero no verifica identidad física.
 
 ## Recorrido prioritario
 
 1. Crear evento con nombre, fecha/hora y ubicación.
 2. Cargar lista CSV/Excel y revisar invitados/duplicados.
-3. Mostrar o descargar QR; enviar correo individual si el remitente está configurado.
+3. Revisar la vista previa personalizada (destinatario, asunto, fecha, lugar y QR) y enviar el primer correo con el pase de ingreso incluido. El envío requiere remitente configurado; la vista previa y descarga funcionan sin correo.
 4. Iniciar sesión de operador en otro navegador o celular.
 5. Escanear o buscar y registrar el ingreso.
 6. Ver “ACREDITADO”; repetir el QR y ver “YA INGRESÓ”.
@@ -34,7 +34,7 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 | Invitados | Alta, edición, búsqueda por nombre/correo/RUT/empresa |
 | Importación | CSV y XLSX; errores por fila; duplicados omitidos |
 | QR | Token aleatorio de 256 bits, ligado al evento y al invitado |
-| Correo | Adaptador SMTP, envío individual confirmado y registro de estado |
+| Correo | Invitación HTML personalizada con QR integrado, vista previa, SMTP individual y registro de estado |
 | Acreditación | Cámara web, código pegado y búsqueda manual |
 | Concurrencia | Actualización condicional atómica que admite un solo ingreso |
 | Panel | Totales, acreditados, pendientes, porcentaje y últimas llegadas |
@@ -66,6 +66,10 @@ La hora exacta de presentación, aforo esperado, alojamiento, dominio y proveedo
 - Impedir acciones administrativas desde la cuenta de operador.
 - Exportar un reporte que cuadre con los totales del panel.
 - Si el correo no está configurado, comunicarlo sin simular un envío.
+
+## Referencia de experiencia
+
+Se toma como referencia la invitación por correo y gestión de invitados de Bice Vida. Para Eventos, la decisión confirmada es entregar el QR **directamente en el primer correo**. La persona no debe registrarse ni confirmar asistencia antes de recibirlo. La vista previa y el envío comparten la misma plantilla, con nombre del invitado, nombre del evento, fecha, lugar y pase QR. El escaneo en acceso registra la llegada, no una confirmación previa.
 
 ## Próxima etapa
 

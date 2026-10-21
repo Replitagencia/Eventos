@@ -53,6 +53,8 @@ Solo el administrador puede extraer QR, editar invitados, importar, enviar invit
 
 Importación en memoria, solo administradores, máximo 2 MB comprimidos y 1.000 invitados. ExcelJS lee la primera hoja `.xlsx`; CSV acepta coma o punto y coma. Se validan todas las filas antes de una transacción. Se omiten duplicados sin sobrescribir registros existentes. No se admite `.xls` antiguo; guardar como `.xlsx` o CSV. El límite de tamaño comprimido no garantiza un límite de memoria descomprimida: antes de permitir archivos de fuentes no confiables, aislar el procesamiento y limitar expansión/tiempo.
 
+La plantilla compartida `src/invitation.js` genera vista previa y correo con los datos escapados. La vista previa autenticada usa una imagen embebida y un iframe sin permisos; SMTP usa la misma imagen adjunta mediante CID. El QR se entrega directamente en la invitación inicial y mantiene el mismo token al visualizarlo y enviarlo. No hay un formulario público ni una fase de confirmación previa.
+
 El envío SMTP es individual. La transición `pending/failed → sending` evita envíos simultáneos; al aceptar SMTP se registra `sent`, ante error `failed`. Una caída del proceso durante el envío puede dejar `sending`; debe revisarse el proveedor antes de corregirlo manualmente. Un timeout SMTP puede ser ambiguo y un reintento podría duplicar el correo. Una siguiente fase debe usar cola e identificadores de proveedor. No se afirma entrega ni lectura.
 
 ## Evolución
