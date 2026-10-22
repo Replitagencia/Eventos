@@ -1,7 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
 import QRCode from 'qrcode';
-import nodemailer from 'nodemailer';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { token } from './db.js';
@@ -9,14 +8,18 @@ import { readSession, requireRole, login, loginLimiter } from './access.js';
 import { operatorRouter } from './operator.js';
 import { parseImport, validateGuest, csvCell } from './import.js';
 import { renderInvitation } from './invitation.js';
+import { categories, validateDesign, eventDesign } from './design.js';
+import { createMailer, rsvpLink } from './mailer.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fail = (status, message) => Object.assign(new Error(message), { status });
 export function createApp(db, config, { sendMail } = {}) {
   const app = express();
   const streams = new Set();
-  app.locals.closeStreams = () => { for (const stream of streams) stream.res.end(); };
+  app.locals.closeStreams = () => { mailer.stop(); for (const stream of streams) stream.res.end(); };
   const broadcast = () => { for (const stream of streams) stream.res.write('data: refresh\n\n'); };
+  const mailer = createMailer(db, config, sendMail, broadcast);
+  app.locals.mailer = mailer;
   app.disable('x-powered-by');
   // Un único proxy que reemplaza X-Forwarded-For; el puerto de Node no se publica.
   app.set('trust proxy', config.trustProxy === 1 ? 1 : false);
@@ -31,13 +34,26 @@ export function createApp(db, config, { sendMail } = {}) {
     if (!['GET','HEAD','OPTIONS'].includes(req.method) && (req.get('X-Requested-With') !== 'eventos' || (req.get('Origin') && req.get('Origin') !== new URL(config.publicUrl).origin))) return res.status(403).json({ error: 'Solicitud no autorizada.' });
     next();
   });
-  app.use(express.json({ limit: '50kb' }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/rsvp/:token', (req, res, next) => {
+    res.set('Referrer-Policy','no-referrer');
+    if (!/^[a-f0-9]{64}$/.test(req.params.token)) return res.status(404).json({ error:'Invitación no disponible.' });
+    req.invitee = db.prepare('SELECT g.id,g.name,g.rsvp_status,e.name event_name,e.date,e.location FROM guests g JOIN events e ON e.id=g.event_id WHERE g.rsvp_token=?').get(req.params.token);
+    if (!req.invitee) return res.status(404).json({ error:'Invitación no disponible.' });
+    next();
+  });
+  app.get('/api/rsvp/:token', (req,res)=> { const {id,...details}=req.invitee; res.json(details); });
+  app.post('/api/rsvp/:token', (req,res)=> {
+    if (!['yes','no'].includes(req.body?.response)) throw fail(400,'Selecciona una respuesta válida.');
+    db.prepare('UPDATE guests SET rsvp_status=?,rsvp_at=? WHERE id=?').run(req.body.response,new Date().toISOString(),req.invitee.id);
+    broadcast(); res.json({ ok:true, response:req.body.response });
+  });
   app.use('/api/operator', operatorRouter(db, config, broadcast));
   app.use('/api', readSession(db, 'eventos_session'));
   app.post('/api/login', loginLimiter(), login(db, config, { role: 'admin', cookieName: 'eventos_session', path: '/' }));
   app.use('/api', requireRole('admin'));
   const admin = requireRole('admin');
-  app.get('/api/me', (req, res) => res.json({ email: req.user.email, role: req.user.role, mailEnabled: config.mailEnabled }));
+  app.get('/api/me', (req, res) => res.json({ email: req.user.email, role: req.user.role, mailEnabled: !!(config.mailEnabled && config.smtp?.host && config.mailFrom) }));
   app.post('/api/logout', (req, res) => {
     db.prepare('DELETE FROM sessions WHERE token=?').run(req.sessionToken);
     for (const stream of streams) if (stream.session === req.sessionToken) stream.res.end();
@@ -53,7 +69,7 @@ export function createApp(db, config, { sendMail } = {}) {
     }, 15000);
     res.on('close', () => { clearInterval(timer); streams.delete(stream); });
   });
-  app.get('/api/events', (_req, res) => res.json(db.prepare(`SELECT events.*, COUNT(guests.id) total, COUNT(guests.checked_at) checked FROM events LEFT JOIN guests ON guests.event_id=events.id GROUP BY events.id ORDER BY events.date DESC`).all()));
+  app.get('/api/events', (_req, res) => res.json(db.prepare(`SELECT events.id,events.name,events.date,events.location, COUNT(guests.id) total, COUNT(guests.checked_at) checked FROM events LEFT JOIN guests ON guests.event_id=events.id GROUP BY events.id ORDER BY events.date DESC`).all()));
   app.post('/api/events', admin, (req, res) => {
     const { name, date, location } = req.body;
     if (typeof name !== 'string' || !name.trim() || name.length > 150 || typeof location !== 'string' || !location.trim() || location.length > 200 || typeof date !== 'string' || !/(Z|[+-]\d\d:\d\d)$/.test(date) || Number.isNaN(Date.parse(date))) throw fail(400, 'Completa nombre, lugar y una fecha con zona horaria.');
@@ -64,6 +80,33 @@ export function createApp(db, config, { sendMail } = {}) {
     req.event = db.prepare('SELECT * FROM events WHERE id=?').get(req.params.eventId);
     if (!req.event) return next(fail(404, 'Evento no encontrado.'));
     next();
+  });
+  app.get('/api/events/:eventId/design', (req,res)=>res.json(eventDesign(req.event)));
+  app.post('/api/events/:eventId/design-preview', async (req,res)=> {
+    const design = validateDesign(req.body);
+    const guest = db.prepare('SELECT * FROM guests WHERE event_id=? ORDER BY id LIMIT 1').get(req.event.id);
+    if (!guest) throw fail(400,'Agrega un invitado para ver la invitación con su QR.');
+    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`,{width:400,margin:2});
+    res.json(renderInvitation({event:req.event,guest,qrSource,designOverride:design,rsvpUrl:rsvpLink(config,guest)}));
+  });
+  app.put('/api/events/:eventId/design', (req,res)=> {
+    const design = validateDesign(req.body);
+    if (db.prepare("SELECT id FROM guests WHERE event_id=? AND invitation_status IN ('queued','sending') LIMIT 1").get(req.event.id)) throw fail(409,'Espera a que terminen los envíos antes de cambiar el diseño.');
+    db.prepare('UPDATE events SET invitation=? WHERE id=?').run(JSON.stringify(design),req.event.id);
+    broadcast(); res.json({ok:true});
+  });
+  app.get('/api/events/:eventId/mail-history', (req,res)=>res.json(db.prepare('SELECT d.* FROM email_deliveries d JOIN guests g ON g.id=d.guest_id WHERE g.event_id=? ORDER BY d.id DESC LIMIT 500').all(req.event.id)));
+  app.get('/api/events/:eventId/batches', (req,res)=>res.json(db.prepare(`SELECT b.*,COUNT(i.guest_id) total,SUM(i.status='sent') sent,SUM(i.status IN ('failed','review')) failed,SUM(i.status IN ('queued','sending')) remaining FROM email_batches b JOIN email_batch_items i ON i.batch_id=b.id WHERE b.event_id=? GROUP BY b.id ORDER BY b.id DESC LIMIT 50`).all(req.event.id)));
+  app.post('/api/events/:eventId/batches', (req,res)=> {
+    const category = req.body.category || 'all';
+    if (category !== 'all' && !categories.includes(category)) throw fail(400,'Categoría inválida.');
+    res.status(202).json(mailer.enqueue(req.event.id,req.user.id,req.body.guestIds,category));
+  });
+  app.post('/api/events/:eventId/test-email', async (req,res)=> {
+    const recipient = validateGuest({name:'Prueba',email:req.body.email}).email;
+    const guest = db.prepare('SELECT * FROM guests WHERE event_id=? LIMIT 1').get(req.event.id);
+    if (!guest) throw fail(400,'Agrega un invitado para preparar la prueba.');
+    res.json(await mailer.deliver(req.event,guest,req.user.id,{testTo:recipient}));
   });
   app.get('/api/events/:eventId/operators', (req, res) => {
     res.json(db.prepare("SELECT users.id,users.email,EXISTS(SELECT 1 FROM operator_events WHERE user_id=users.id AND event_id=?) assigned FROM users WHERE role='operator' ORDER BY email").all(req.event.id));
@@ -80,7 +123,7 @@ export function createApp(db, config, { sendMail } = {}) {
     } catch (error) { db.exec('ROLLBACK'); throw error; }
     broadcast(); res.json({ ok: true });
   });
-  const publicGuestColumns = 'id,name,email,rut,company,created_at,checked_at,checkin_method,invitation_status,sent_at';
+  const publicGuestColumns = 'id,name,email,rut,company,category,notes,rsvp_status,rsvp_at,created_at,checked_at,checkin_method,invitation_status,sent_at';
   app.get('/api/events/:eventId/guests', (req, res) => {
     res.json(db.prepare(`SELECT ${publicGuestColumns} FROM guests WHERE event_id=? ORDER BY name COLLATE NOCASE`).all(req.event.id));
   });
@@ -93,15 +136,15 @@ export function createApp(db, config, { sendMail } = {}) {
   });
   app.post('/api/events/:eventId/guests', admin, (req, res) => {
     const guest = validateGuest(req.body);
-    const result = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token) VALUES(?,?,?,?,?,?)').run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token());
+    const result = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token,category,notes) VALUES(?,?,?,?,?,?,?,?)').run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token(), guest.category, guest.notes);
     broadcast(); res.status(201).json({ id: Number(result.lastInsertRowid) });
   });
   app.patch('/api/events/:eventId/guests/:guestId', admin, (req, res) => {
     const guest = validateGuest(req.body);
     const current = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
     if (!current) throw fail(404, 'Invitado no encontrado.');
-    if (current.invitation_status === 'sending') throw fail(409, 'Espera a que termine el envío.');
-    db.prepare('UPDATE guests SET name=?,email=?,rut=?,company=?,invitation_status=?,sent_at=? WHERE id=?').run(guest.name, guest.email, guest.rut, guest.company, guest.email === current.email ? current.invitation_status : 'pending', guest.email === current.email ? current.sent_at : null, current.id);
+    if (['sending','queued'].includes(current.invitation_status)) throw fail(409, 'Espera a que termine el envío.');
+    db.prepare('UPDATE guests SET name=?,email=?,rut=?,company=?,category=?,notes=?,rsvp_token=?,rsvp_status=?,rsvp_at=?,invitation_status=?,sent_at=? WHERE id=?').run(guest.name, guest.email, guest.rut, guest.company, guest.category, guest.notes, guest.email === current.email ? current.rsvp_token : db.prepare('SELECT lower(hex(randomblob(32))) value').get().value, guest.email === current.email ? current.rsvp_status : 'pending', guest.email === current.email ? current.rsvp_at : null, guest.email === current.email ? current.invitation_status : 'pending', guest.email === current.email ? current.sent_at : null, current.id);
     broadcast(); res.json({ ok: true });
   });
   app.post('/api/events/:eventId/import', admin, express.raw({ type: 'application/octet-stream', limit: '2mb' }), async (req, res) => {
@@ -110,9 +153,9 @@ export function createApp(db, config, { sendMail } = {}) {
     let imported = 0, duplicates = 0;
     db.exec('BEGIN IMMEDIATE');
     try {
-      const insert = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING');
+      const insert = db.prepare('INSERT INTO guests(event_id,name,email,rut,company,token,category,notes) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING');
       for (const guest of guests) {
-        const result = insert.run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token());
+        const result = insert.run(req.event.id, guest.name, guest.email, guest.rut, guest.company, token(), guest.category, guest.notes);
         if (result.changes) imported++; else duplicates++;
       }
       db.exec('COMMIT');
@@ -128,64 +171,22 @@ export function createApp(db, config, { sendMail } = {}) {
     const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
     if (!guest) throw fail(404, 'Invitado no encontrado.');
     const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
-    res.json({ to: guest.email, ...renderInvitation({ event: req.event, guest, qrSource }) });
+    res.json({ to: guest.email, ...renderInvitation({ event: req.event, guest, qrSource, rsvpUrl: rsvpLink(config,guest) }) });
   });
   app.get('/api/events/:eventId/report.csv', admin, (req, res) => {
     const guests = db.prepare('SELECT guests.*,users.email operator FROM guests LEFT JOIN users ON users.id=guests.checked_by WHERE event_id=? ORDER BY name').all(req.event.id);
-    const rows = [['Nombre','Email','RUT','Empresa','Estado','Ingreso UTC','Operador','Método','Invitación','Registrado UTC','Invitación enviada UTC'], ...guests.map(g => [g.name,g.email,g.rut,g.company,g.checked_at ? 'Acreditado' : 'Pendiente',g.checked_at,g.operator,g.checkin_method,g.invitation_status,g.created_at,g.sent_at])];
+    const rows = [['Nombre','Email','RUT','Empresa','Estado','Ingreso UTC','Operador','Método','Invitación','Registrado UTC','Invitación enviada UTC','Categoría','Notas internas','Confirmación','Respuesta UTC'], ...guests.map(g => [g.name,g.email,g.rut,g.company,g.checked_at ? 'Acreditado' : 'Pendiente',g.checked_at,g.operator,g.checkin_method,g.invitation_status,g.created_at,g.sent_at,g.category,g.notes,({pending:'Sin respuesta',yes:'Asistirá',no:'No asistirá'})[g.rsvp_status],g.rsvp_at])];
     res.attachment(`evento-${req.event.id}-reporte.csv`).type('text/csv; charset=utf-8').send('\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n'));
   });
   app.get('/api/events/:eventId/email-report.csv', admin, (req, res) => {
     const deliveries = db.prepare(`SELECT email_deliveries.*,users.email initiated_by_email FROM email_deliveries JOIN guests ON guests.id=email_deliveries.guest_id JOIN users ON users.id=email_deliveries.initiated_by WHERE guests.event_id=? ORDER BY email_deliveries.id DESC`).all(req.event.id);
-    const rows = [['Nombre al enviar','Destinatario','Remitente','Asunto','Estado','Inicio UTC','Fin UTC','Solicitado por','ID de mensaje','Observación'], ...deliveries.map(d => [d.recipient_name,d.recipient,d.sender,d.subject,d.status,d.started_at,d.finished_at,d.initiated_by_email,d.message_id,d.failure_note])];
+    const rows = [['Nombre al enviar','Destinatario','Remitente','Asunto','Estado','Inicio UTC','Fin UTC','Solicitado por','ID de mensaje','Observación','Tipo'], ...deliveries.map(d => [d.recipient_name,d.recipient,d.sender,d.subject,d.status,d.started_at,d.finished_at,d.initiated_by_email,d.message_id,d.failure_note,d.kind])];
     res.attachment(`evento-${req.event.id}-correos.csv`).type('text/csv; charset=utf-8').send('\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n'));
   });
-  app.post('/api/events/:eventId/guests/:guestId/invite', admin, async (req, res) => {
-    if (!config.mailEnabled || !config.smtp?.host || !config.mailFrom) throw fail(409, 'Correo pendiente de configuración SMTP. Puedes mostrar o descargar el QR.');
-    const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
-    if (!guest) throw fail(404, 'Invitado no encontrado.');
-    const cid = 'invitacion-qr@eventos';
-    const invitation = renderInvitation({ event: req.event, guest, qrSource: `cid:${cid}` });
-    let deliveryId;
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const claim = db.prepare("UPDATE guests SET invitation_status='sending' WHERE id=? AND invitation_status IN ('pending','failed')").run(guest.id);
-      if (!claim.changes) throw fail(409, 'La invitación ya fue enviada o está en proceso.');
-      deliveryId = Number(db.prepare("INSERT INTO email_deliveries(guest_id,recipient,recipient_name,sender,subject,status,started_at,initiated_by) VALUES(?,?,?,?,?,'sending',?,?)").run(guest.id,guest.email,guest.name,config.mailFrom,invitation.subject,new Date().toISOString(),req.user.id).lastInsertRowid);
-      db.exec('COMMIT');
-    } catch (error) { db.exec('ROLLBACK'); throw error; }
-    broadcast();
-    let info;
-    try {
-      const qr = await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
-      const message = {
-        from: config.mailFrom, to: guest.email, subject: invitation.subject,
-        text: invitation.text, html: invitation.html,
-        attachments: [{ filename: 'invitacion-qr.png', content: qr, contentType: 'image/png', cid, contentDisposition: 'inline' }]
-      };
-      info = await (sendMail
-        ? sendMail(message)
-        : nodemailer.createTransport({ ...config.smtp, connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000 }).sendMail(message));
-      if (!info.accepted?.length) throw new Error('Recipient rejected');
-    } catch {
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        db.prepare("UPDATE guests SET invitation_status='failed' WHERE id=?").run(guest.id);
-        db.prepare("UPDATE email_deliveries SET status='failed',finished_at=?,failure_note=? WHERE id=?").run(new Date().toISOString(),'No se pudo confirmar la aceptación SMTP. Revisar proveedor antes de reintentar.',deliveryId);
-        db.exec('COMMIT');
-      } catch (error) { db.exec('ROLLBACK'); throw error; }
-      broadcast(); throw fail(502, 'No se pudo confirmar el envío. Revisa SMTP antes de reintentar.');
-    }
-    // Una falla al persistir después de SMTP deja el intento en revisión (sending),
-    // nunca lo convierte en un rechazo que autorice repetir el envío automáticamente.
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const finishedAt = new Date().toISOString();
-      db.prepare("UPDATE guests SET invitation_status='sent',sent_at=? WHERE id=?").run(finishedAt, guest.id);
-      db.prepare("UPDATE email_deliveries SET status='sent',finished_at=?,message_id=? WHERE id=?").run(finishedAt,typeof info.messageId === 'string' ? info.messageId : null,deliveryId);
-      db.exec('COMMIT');
-    } catch (error) { db.exec('ROLLBACK'); throw error; }
-    broadcast(); res.json({ ok: true });
+  app.post('/api/events/:eventId/guests/:guestId/invite', admin, async (req,res)=> {
+    const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId,req.event.id);
+    if (!guest) throw fail(404,'Invitado no encontrado.');
+    res.json(await mailer.deliver(req.event,guest,req.user.id,{resend:req.body?.resend === true}));
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
   app.get('/vendor/html5-qrcode.min.js', (_req, res) => res.sendFile(resolve(root, 'node_modules/html5-qrcode/html5-qrcode.min.js')));

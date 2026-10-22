@@ -76,3 +76,15 @@ docs/                 Arquitectura, operación y demostración
 data/                 Base local persistente (excluida de Git)
 .github/workflows/     Verificación automatizada
 ```
+
+## Administración de invitaciones
+
+En **Diseño de invitación**, personaliza el correo por evento: asunto, textos, colores, logo e imagen (PNG/JPG/WebP, máximo 350 KB cada una). Revisa la vista previa con QR y guarda el diseño.
+
+En **Invitados**, agrega categorías (general, VIP, prensa, equipo y proveedores) y notas internas. La ficha incluye QR, confirmación, historial de correo y datos del ingreso. CSV/XLSX acepta también `categoria` y `notas`; ambas son opcionales. Los reportes CSV incluyen estos campos y la confirmación.
+
+En **Correos**, envía una prueba a tu dirección o prepara un lote por categoría. Antes de confirmar se muestra la lista de destinatarios. Los lotes incluyen solo invitaciones por enviar; los reenvíos se solicitan individualmente desde **Ver invitación**. La cola persiste y continúa si cierras el navegador. Los fallos o envíos interrumpidos requieren revisión; no se reintentan automáticamente. Una prueba lleva un QR sin acceso válido y no cambia el estado de ningún invitado.
+
+El correo incluye **Asistiré / No podré asistir**. El invitado confirma su elección en una página móvil; abrir el enlace no registra la respuesta. No necesita cuenta. Confirmación e ingreso son independientes y el QR se entrega desde el primer correo.
+
+El envío real permanece deshabilitado hasta configurar el proveedor y remitente. En el servidor DigitalOcean se requiere una futura integración por HTTPS; no basta con habilitar SMTP. Ver [despliegue](docs/despliegue.md).

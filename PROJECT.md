@@ -10,11 +10,11 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 
 ## Personas y permisos
 
-**Administrador:** crea eventos, agrega/edita/importa invitados, visualiza QR, envía invitaciones individuales y exporta reportes. Asigna las cuentas que pueden acreditar cada evento y observa sus ingresos en vivo.
+**Administrador:** crea eventos, agrega/edita/importa invitados, visualiza QR, diseña invitaciones, envía pruebas, invitaciones individuales, reenvíos y lotes por categoría y exporta reportes. Asigna las cuentas que pueden acreditar cada evento y observa sus ingresos en vivo.
 
 **Operador:** entra por `/acreditacion/`, con su cuenta y sesión propias. Solo ve los eventos asignados, el escáner, una búsqueda de hasta 20 coincidencias con identificadores parcialmente ocultos y el resultado del ingreso. No accede a planificación, listados completos, fichas administrativas, correo, reportes o estadísticas. La API aplica la separación aunque se intenten consultar esas rutas directamente.
 
-**Invitado:** recibe directamente la invitación diseñada y su QR personal en el primer correo, y lo presenta en el acceso. No hay formulario de registro ni confirmación de asistencia previa al QR. No necesita instalar una aplicación ni tener cuenta. El QR es una credencial transferible: el sistema impide repetir el ingreso, pero no verifica identidad física.
+**Invitado:** recibe directamente la invitación diseñada y su QR personal en el primer correo, y lo presenta en el acceso. No hay formulario de registro previo al QR. Puede confirmar opcionalmente si asistirá mediante un enlace personal del correo; esa respuesta no acredita su ingreso. No necesita instalar una aplicación ni tener cuenta. El QR es una credencial transferible: el sistema impide repetir el ingreso, pero no verifica identidad física.
 
 ## Recorrido prioritario
 
@@ -41,7 +41,7 @@ Hito inmediato: **jueves 22 de octubre de 2026**, Santiago de Chile. La primera 
 | Reportes | CSV de invitados/ingresos y CSV independiente del historial de correos |
 | Acceso | Roles, contraseñas con scrypt, cookies HttpOnly, protección de origen |
 
-Campos de invitado: nombre completo y correo obligatorios; RUT y empresa opcionales. El correo se compara sin distinguir mayúsculas. El RUT se normaliza quitando puntos, guion y espacios; **no se valida su dígito verificador** en esta versión. No se almacena información sensible adicional.
+Campos de invitado: nombre completo y correo obligatorios; RUT y empresa opcionales. El correo se compara sin distinguir mayúsculas. El RUT se normaliza quitando puntos, guion y espacios; **no se valida su dígito verificador** en esta versión. Se añaden categoría (general, VIP, prensa, equipo o proveedores) y notas internas de hasta 2.000 caracteres, visibles solo en administración.
 
 ## Plan hasta el jueves
 
@@ -79,10 +79,20 @@ El historial conserva destinatario, nombre, remitente, asunto, fecha, administra
 
 ## Próxima etapa
 
-Gestión de usuarios y recuperación de claves; envío masivo con cola y control de reintentos; estados de entrega/rebote mediante proveedor; historial de cambios e invalidación/reemisión de QR; invitación web personal; filtros y reportes XLSX; organización por cliente; PostgreSQL y distribución de cambios entre instancias si se necesita escalar.
+Gestión de usuarios y recuperación de claves; integración de correo por HTTPS y gestión de resultados del proveedor; estados de entrega/rebote mediante proveedor; historial de cambios e invalidación/reemisión de QR; invitación web personal; filtros y reportes XLSX; organización por cliente; PostgreSQL y distribución de cambios entre instancias si se necesita escalar.
 
 No forman parte de este MVP: ventas/pagos, asientos, accesos múltiples, acreditación sin conexión, biometría, garantías de entrega de correo ni seguimiento de aperturas. Sin conexión no se confirma el ingreso: el servidor es la fuente de verdad.
 
 ## Separación de la operación móvil
 
 La acreditación es una aplicación de acceso separada de la planificación, con HTML, estilos, JavaScript, inicio de sesión y API propios. Comparte únicamente el servidor y la base central para que los ingresos se reflejen en la administración. No es una aplicación nativa ni un servicio alojado en otro dominio; esas opciones se pueden evaluar después. El operario no navega el panel administrativo ni descarga su información.
+
+## Ampliación de administración · 22 de octubre de 2026
+
+- **Diseño de invitación:** asunto, título, texto, despedida, colores, logo e imagen principal por evento. Archivos PNG/JPG/WebP de hasta 350 KB cada uno. Vista previa con el QR del primer invitado; el diseño debe guardarse para aplicarlo a los envíos.
+- **Correos:** prueba a una dirección elegida (QR de demostración sin acceso), reenvío individual explícito y envío masivo de invitados por enviar por categoría, con revisión de destinatarios. Cola persistente, avance e historial. No reintenta fallos o resultados inciertos automáticamente.
+- **Invitados:** categoría, notas internas, filtros combinados, ficha e importación de las columnas opcionales `categoria` y `notas`.
+- **Confirmación:** enlaces “Asistiré” y “No podré asistir”; abrir un enlace no cambia el estado, se debe guardar la elección. Se puede actualizar. Cambiar el correo del invitado revoca el enlace anterior y reinicia la confirmación, sin cambiar su QR ni su ingreso.
+- **Panel y reporte:** confirmados, declinados, sin respuesta, correos por revisar y totales de ingreso; CSV incluye categoría, notas y confirmación. Pendientes de llegada equivale a ausentes al cerrar el evento; no se deduce un cierre por la hora de inicio.
+
+El envío real continúa sujeto a configurar un proveedor y remitente. Las pruebas automatizadas no envían correos reales. La aplicación de operarios conserva su separación y no recibe estas funciones administrativas.

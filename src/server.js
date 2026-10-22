@@ -18,5 +18,5 @@ const app = createApp(db, config);
 const server = app.listen(Number(env.PORT || 3000), env.HOST || '127.0.0.1', () => console.log(`Eventos disponible en ${config.publicUrl}`));
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal, () => {
   app.locals.closeStreams();
-  server.close(() => { db.close(); process.exit(0); });
+  server.close(async () => { await app.locals.mailer.idle(); db.close(); process.exit(0); });
 });

@@ -1,3 +1,3 @@
-nombre,email,rut,empresa
-Camila Ejemplo,camila@example.com,,Empresa Demo
-Diego Ejemplo,diego@example.com,,Estudio Demo
+nombre,email,rut,empresa,categoria,notas
+Camila Ejemplo,camila@example.com,,Empresa Demo,general,
+Diego Ejemplo,diego@example.com,,Estudio Demo,vip,Contacto de organización
