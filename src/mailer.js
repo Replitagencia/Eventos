@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
 import { renderInvitation } from './invitation.js';
+import { qrOptions } from './pass.js';
 import { eventDesign } from './design.js';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 export const rsvpLink = (config, guest) => `${config.publicUrl.replace(/\/$/,'')}/confirmacion/?token=${guest.rsvp_token}`;
@@ -35,7 +36,7 @@ export function createMailer(db, config, sendMail, broadcast) {
     broadcast();
     let info;
     try {
-      const qr = await QRCode.toBuffer(test ? 'PRUEBA-SIN-ACCESO' : `EVT:${event.id}:${guest.token}`, { width:400, margin:2 });
+      const qr = await QRCode.toBuffer(test ? 'PRUEBA-SIN-ACCESO' : `EVT:${event.id}:${guest.token}`, qrOptions(design));
       attachments.push({ filename:'invitacion-qr.png', content:qr, contentType:'image/png', cid:'invitacion-qr@eventos', contentDisposition:'inline' });
       const message = { from:config.mailFrom, to:testTo || guest.email, subject:invitation.subject, text:invitation.text, html:invitation.html, attachments };
       info = await (sendMail ? sendMail(message) : nodemailer.createTransport({ ...config.smtp, connectionTimeout:10000, greetingTimeout:10000, socketTimeout:15000 }).sendMail(message));

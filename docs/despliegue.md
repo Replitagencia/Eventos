@@ -63,3 +63,9 @@ Publicados diseño por evento, categorías/notas, confirmación opcional, ficha 
 Verificación: 28 pruebas de servidor aprobadas y seis recorridos de interfaz comprobados. La prueba existente de escaneo sostenido tuvo un fallo de temporización en la ejecución completa y pasó al repetirse aisladamente. Verificación externa por HTTPS: salud, nuevas rutas administrativas, datos existentes, igualdad de los siete QR decodificados e ingresos previos conservados. No se acreditaron personas ni se enviaron correos como parte de esta verificación.
 
 El usuario decidió posponer proveedor y remitente; `MAIL_ENABLED=false`. Los controles de envío permanecen deshabilitados. La futura integración HTTPS debe usar la misma auditoría y reserva de la cola. La migración v4 no es compatible con arrancar el código v3 sobre la base nueva: una recuperación debe planificarse con respaldo y conservación de cualquier dato posterior, no limitarse a cambiar la imagen.
+
+## Actualización del 22 de octubre de 2026: pases con marca
+
+Publicados tres estilos de pase (color de marca, minimalista e imagen), textos configurables y QR negro o de marca oscurecido. Previsualización y descarga PNG desde el diseño y la ficha individual. No cambia el esquema SQL ni los tokens de acceso.
+
+Respaldo previo: `eventos-2026-10-22T13-16-05-737Z.sqlite`. Imagen anterior: `agency-eventos-app:before-branded-pass-20261022`. Verificación: 29 pruebas de servidor y siete de interfaz aprobadas; PNG decodificado en los tres estilos a 720 y 360 píxeles. Tras publicar, se verificaron los siete pases por HTTPS contra los tokens originales, con eventos e ingresos previos conservados. El correo permanece deshabilitado.

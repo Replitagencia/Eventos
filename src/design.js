@@ -1,5 +1,5 @@
 export const categories = ['general', 'vip', 'prensa', 'equipo', 'proveedores'];
-export const designDefaults = { subject: '', heading: 'Nos encontramos muy pronto.', message: 'Queremos contar contigo en este encuentro. Guarda esta invitación y presenta tu código QR al llegar.', closing: '¡Te esperamos!', color: '#23483d', background: '#f1f3eb', logo: '', hero: '' };
+export const designDefaults = { subject: '', heading: 'Nos encontramos muy pronto.', message: 'Queremos contar contigo en este encuentro. Guarda esta invitación y presenta tu código QR al llegar.', closing: '¡Te esperamos!', color: '#23483d', background: '#f1f3eb', logo: '', hero: '', passStyle: 'brand', passLabel: 'PASE DE ACCESO', passFooter: 'Presenta este pase al llegar.', qrTone: 'black' };
 const invalid = message => { throw Object.assign(new Error(message), { status: 400 }); };
 export function validateDesign(input) {
   const result = {};
@@ -20,6 +20,16 @@ export function validateDesign(input) {
     const valid = match[1] === 'png' ? bytes.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')) : match[1] === 'jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 : bytes.toString('ascii',0,4) === 'RIFF' && bytes.toString('ascii',8,12) === 'WEBP';
     if (!valid || bytes.length > 350 * 1024) invalid('El archivo no es una imagen válida o supera 350 KB.');
     result[key] = value;
+  }
+  for (const [key, allowed] of Object.entries({passStyle:['brand','minimal','image'],qrTone:['black','brand']})) {
+    const value = input[key] ?? designDefaults[key];
+    if (!allowed.includes(value)) invalid('Selecciona un estilo de pase y color de QR válidos.');
+    result[key] = value;
+  }
+  for (const [key, limit] of Object.entries({passLabel:40,passFooter:120})) {
+    const value = input[key] ?? designDefaults[key];
+    if (typeof value !== 'string' || value.length > limit) invalid(`El texto del pase supera el máximo de ${limit} caracteres.`);
+    result[key] = value.trim();
   }
   return result;
 }

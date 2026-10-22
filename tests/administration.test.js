@@ -127,3 +127,26 @@ test('importación valida categorías de forma atómica y el operario no obtiene
  assert.equal(result.status,200);assert.equal(result.data[0].notes,undefined);assert.equal(result.data[0].rsvp_token,undefined);
  assert.equal(db.prepare('SELECT count(*) n FROM email_deliveries').get().n,0);
 });
+
+test('pase comercial y QR de marca conservan acceso, contraste y aislamiento',async t=>{
+ const {request,db}=await fixture(t);
+ const before={...db.prepare('SELECT * FROM guests WHERE id=1').get()};
+ const design={...designDefaults,color:'#ffdd99',qrTone:'brand',passStyle:'minimal',passLabel:'ACCESO <VIP>',passFooter:'Presenta este pase.'};
+ assert.equal((await request('/api/events/1/design','PUT',design)).status,200);
+ assert.equal((await request('/api/events/1/guests/1/pass','GET',null,{Cookie:''})).status,401);
+ const other=await request('/api/events','POST',{name:'Otro',date:'2026-10-22T21:00:00Z',location:'Santiago'});
+ assert.equal((await request(`/api/events/${other.data.id}/guests/1/pass`)).status,404);
+ for(const style of ['brand','minimal','image']){
+  const result=await request('/api/events/1/pass-preview','POST',{...design,passStyle:style});
+  assert.equal(result.status,200);assert.match(result.data.svg,/ACCESO &lt;VIP&gt;/);assert.doesNotMatch(result.data.svg,/<script|<foreignObject/);
+  const image=[...result.data.svg.matchAll(/href="data:image\/png;base64,([^"]+)"/g)].at(-1)[1];
+  const png=PNG.sync.read(Buffer.from(image,'base64'));
+  assert.equal(jsQR(new Uint8ClampedArray(png.data),png.width,png.height).data,`EVT:1:${before.token}`);
+  const colors=new Set();for(let i=0;i<png.data.length;i+=4)if(png.data[i]<255)colors.add([png.data[i],png.data[i+1],png.data[i+2]].join(','));
+  assert.ok([...colors].every(color=>color.split(',').every(channel=>Number(channel)<=90)));
+ }
+ assert.equal((await request('/api/events/1/design','PUT',{...design,qrTone:'transparent'})).status,400);
+ assert.deepEqual({...db.prepare('SELECT * FROM guests WHERE id=1').get()},before);
+ const sample=(await request(`/api/events/${other.data.id}/pass-preview`,'POST',design)).data.svg;
+ assert.match(sample,/MUESTRA · SIN ACCESO VÁLIDO/);
+});

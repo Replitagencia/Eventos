@@ -94,3 +94,11 @@ El reenvío individual exige `resend: true` para un estado `sent`; no permite re
 `/confirmacion/?token=…` es una página pública y `/api/rsvp/:token` valida una credencial aleatoria de 64 caracteres hexadecimales. GET solo devuelve nombre de invitado y datos mínimos del evento/respuesta; no retorna QR, correo, notas ni listas. POST exige la protección de origen/encabezado y una elección `yes/no`. El enlace no cambia estados por GET (evita respuestas accidentales por previsualizadores de correo). La página aplica `no-referrer` y la API `no-store`. La confirmación no modifica `checked_at`; declinar no invalida el pase. Cambiar el correo rota el token de confirmación y reinicia su respuesta.
 
 La restricción de acreditación SQL condicional y las rutas de operarios permanecen sin modificaciones.
+
+## Pase comercial y color del QR
+
+`src/pass.js` produce un SVG autónomo con textos escapados, imágenes raster embebidas y el QR personal. Las rutas administrativas `GET /api/events/:eventId/guests/:guestId/pass` y `POST /api/events/:eventId/pass-preview` devuelven el SVG dentro de JSON. El navegador lo convierte a PNG mediante canvas para previsualizar y descargar exactamente la misma imagen; no usa recursos externos ni `foreignObject`. El pase no contiene correo, RUT ni notas internas.
+
+`events.invitation` admite los campos opcionales `passStyle`, `passLabel`, `passFooter` y `qrTone`, con valores predeterminados para eventos anteriores. No cambia el esquema SQL. `qrOptions` unifica el QR descargado, el correo, las vistas previas y el pase: margen blanco de cuatro módulos, corrección M, negro o color de marca con cada canal limitado proporcionalmente a 90/255. El logo se coloca fuera de los módulos del QR y no se aplican transparencias ni imágenes sobre el código. El payload y la actualización condicional del ingreso permanecen iguales.
+
+La lectura se verifica decodificando los PNG completos de los tres estilos, a 720 y 360 píxeles de ancho. Esto verifica el archivo generado; la distancia, brillo y cámara del dispositivo siguen influyendo en el uso físico.

@@ -9,6 +9,7 @@ import { operatorRouter } from './operator.js';
 import { parseImport, validateGuest, csvCell } from './import.js';
 import { renderInvitation } from './invitation.js';
 import { categories, validateDesign, eventDesign } from './design.js';
+import { qrOptions, renderPass } from './pass.js';
 import { createMailer, rsvpLink } from './mailer.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -86,8 +87,18 @@ export function createApp(db, config, { sendMail } = {}) {
     const design = validateDesign(req.body);
     const guest = db.prepare('SELECT * FROM guests WHERE event_id=? ORDER BY id LIMIT 1').get(req.event.id);
     if (!guest) throw fail(400,'Agrega un invitado para ver la invitación con su QR.');
-    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`,{width:400,margin:2});
+    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`,qrOptions(design));
     res.json(renderInvitation({event:req.event,guest,qrSource,designOverride:design,rsvpUrl:rsvpLink(config,guest)}));
+  });
+  app.post('/api/events/:eventId/pass-preview', async (req,res)=> {
+    const design=validateDesign(req.body);
+    const guest=db.prepare('SELECT * FROM guests WHERE event_id=? ORDER BY id LIMIT 1').get(req.event.id);
+    res.json({svg:await renderPass({event:req.event,guest:guest || {name:'Nombre del invitado',category:'general'},design,sample:!guest})});
+  });
+  app.get('/api/events/:eventId/guests/:guestId/pass', async (req,res)=> {
+    const guest=db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId,req.event.id);
+    if(!guest) throw fail(404,'Invitado no encontrado.');
+    res.json({svg:await renderPass({event:req.event,guest})});
   });
   app.put('/api/events/:eventId/design', (req,res)=> {
     const design = validateDesign(req.body);
@@ -165,12 +176,12 @@ export function createApp(db, config, { sendMail } = {}) {
   app.get('/api/events/:eventId/guests/:guestId/qr', admin, async (req, res) => {
     const guest = db.prepare('SELECT token FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
     if (!guest) throw fail(404, 'Invitado no encontrado.');
-    res.type('png').send(await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 }));
+    res.type('png').send(await QRCode.toBuffer(`EVT:${req.event.id}:${guest.token}`, qrOptions(eventDesign(req.event))));
   });
   app.get('/api/events/:eventId/guests/:guestId/invitation-preview', admin, async (req, res) => {
     const guest = db.prepare('SELECT * FROM guests WHERE id=? AND event_id=?').get(req.params.guestId, req.event.id);
     if (!guest) throw fail(404, 'Invitado no encontrado.');
-    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`, { width: 400, margin: 2 });
+    const qrSource = await QRCode.toDataURL(`EVT:${req.event.id}:${guest.token}`, qrOptions(eventDesign(req.event)));
     res.json({ to: guest.email, ...renderInvitation({ event: req.event, guest, qrSource, rsvpUrl: rsvpLink(config,guest) }) });
   });
   app.get('/api/events/:eventId/report.csv', admin, (req, res) => {

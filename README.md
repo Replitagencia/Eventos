@@ -88,3 +88,7 @@ En **Correos**, envía una prueba a tu dirección o prepara un lote por categor�
 El correo incluye **Asistiré / No podré asistir**. El invitado confirma su elección en una página móvil; abrir el enlace no registra la respuesta. No necesita cuenta. Confirmación e ingreso son independientes y el QR se entrega desde el primer correo.
 
 El envío real permanece deshabilitado hasta configurar el proveedor y remitente. En el servidor DigitalOcean se requiere una futura integración por HTTPS; no basta con habilitar SMTP. Ver [despliegue](docs/despliegue.md).
+
+### Pase QR con marca
+
+En **Diseño de invitación → Diseño del pase QR**, elige el estilo, texto y color del QR. Usa **Vista previa del pase QR** y guarda. En la ficha o invitación de cada persona, abre **Ver pase con diseño → Descargar pase PNG**. Incluye logo, evento, nombre, categoría, fecha y lugar; mantiene el mismo acceso individual. Los colores claros del QR se oscurecen automáticamente y el logo queda fuera del código para conservar su lectura.

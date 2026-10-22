@@ -63,7 +63,7 @@ async function refresh() {
   $('#event-summary').innerHTML = [['Confirmados',guests.filter(g=>g.rsvp_status==='yes').length],['No asistirán',guests.filter(g=>g.rsvp_status==='no').length],['Sin respuesta',guests.filter(g=>g.rsvp_status==='pending').length],['Correos por revisar',guests.filter(g=>g.invitation_status==='failed').length]].map(([label,total])=>`<article><span>${label}</span><strong>${total}</strong></article>`).join('') + '<p>La confirmación y el ingreso se registran por separado. Los pendientes de llegada pasan a ser ausentes al finalizar el evento.</p>';
   if (state.view === 'mail') await loadMail();
   $('#send-test').disabled = $('#prepare-batch').disabled = !event || !state.user.mailEnabled;
-  ['#add-guest','#import-button','#export','#export-mail','#manage-operators','#preview-design'].forEach(selector => $(selector).disabled = !event);
+  ['#add-guest','#import-button','#export','#export-mail','#manage-operators','#preview-design','#preview-pass'].forEach(selector => $(selector).disabled = !event);
 }
 function renderArrivals() {
   const arrivals = state.guests.filter(g => g.checked_at).sort((a,b) => b.checked_at.localeCompare(a.checked_at)).slice(0,5);
@@ -104,7 +104,7 @@ async function showGuestDetail(id) {
   try {
     const { guest, deliveries } = await api(`${eventPath()}/guests/${id}/detail`);
     const fields = [['Correo', guest.email], ['RUT', guest.rut || 'No informado'], ['Empresa', guest.company || 'No informada'], ['Categoría', categoryLabels[guest.category]], ['Notas internas',guest.notes || 'Sin notas'], ['Confirmación',rsvpLabels[guest.rsvp_status]], ['Respuesta',guest.rsvp_at ? stamp(guest.rsvp_at) : 'Sin respuesta'], ['Registro', stamp(guest.created_at)], ['Invitación', mailStatus[guest.invitation_status]], ['Envío actual', guest.sent_at ? stamp(guest.sent_at) : 'Sin envío confirmado']];
-    modal(`<p class="eyebrow">REGISTRO INTERNO DEL INVITADO</p><h2>${esc(guest.name)}</h2><dl class="guest-detail-fields">${fields.map(([label,value]) => `<dt>${label}</dt><dd>${esc(value)}</dd>`).join('')}</dl><img class="guest-pass" src="${eventPath()}/guests/${guest.id}/qr" width="220" height="220" alt="QR de ${esc(guest.name)}"><section class="checkin-detail"><h3>${guest.checked_at ? '✓ Ingreso registrado' : 'Pendiente de ingreso'}</h3><p>${guest.checked_at ? `${stamp(guest.checked_at)} · ${guest.checkin_method === 'qr' ? 'Escaneo QR' : 'Acreditación manual'}<br>Operador: ${esc(guest.operator || 'No disponible')}` : 'Esta persona todavía no ha sido acreditada.'}</p></section><div class="panel-heading"><h3>Historial de correos</h3><button class="text-button" data-detail="${guest.id}">Actualizar ficha</button></div><div class="mail-history">${deliveries.length ? deliveries.map(d => `<article><div class="mail-history-heading"><strong>${d.kind === 'test' ? 'Prueba · ' : ''}${esc(mailStatus[d.status])}</strong><time>${stamp(d.started_at)}</time></div><p>${esc(d.subject)}</p><dl><dt>Para</dt><dd>${esc(d.recipient_name)} · ${esc(d.recipient)}</dd><dt>Desde</dt><dd>${esc(d.sender)}</dd><dt>Solicitado por</dt><dd>${esc(d.initiated_by_email)}</dd>${d.finished_at ? `<dt>Finalizado</dt><dd>${stamp(d.finished_at)}</dd>` : ''}</dl>${d.failure_note ? `<p class="mail-history-note">${esc(d.failure_note)}</p>` : ''}${d.status === 'sending' ? '<p class="mail-history-note">En proceso. Si el envío se interrumpió, revisar el proveedor antes de repetirlo.</p>' : ''}</article>`).join('') : '<p class="empty">No hay intentos de envío registrados. La vista previa del correo no cuenta como un envío. Los envíos anteriores a esta actualización pueden no tener historial.</p>'}</div><p class="file-note">Fechas en hora de Santiago. “Enviada” indica aceptación del proveedor; no confirma entrega ni lectura.</p><div class="actions"><button class="primary" data-qr="${guest.id}">Ver invitación y QR</button><button class="secondary" data-edit="${guest.id}">Editar datos</button></div>`);
+    modal(`<p class="eyebrow">REGISTRO INTERNO DEL INVITADO</p><h2>${esc(guest.name)}</h2><dl class="guest-detail-fields">${fields.map(([label,value]) => `<dt>${label}</dt><dd>${esc(value)}</dd>`).join('')}</dl><img class="guest-pass" src="${eventPath()}/guests/${guest.id}/qr" width="220" height="220" alt="QR de ${esc(guest.name)}"><section class="checkin-detail"><h3>${guest.checked_at ? '✓ Ingreso registrado' : 'Pendiente de ingreso'}</h3><p>${guest.checked_at ? `${stamp(guest.checked_at)} · ${guest.checkin_method === 'qr' ? 'Escaneo QR' : 'Acreditación manual'}<br>Operador: ${esc(guest.operator || 'No disponible')}` : 'Esta persona todavía no ha sido acreditada.'}</p></section><div class="panel-heading"><h3>Historial de correos</h3><button class="text-button" data-detail="${guest.id}">Actualizar ficha</button></div><div class="mail-history">${deliveries.length ? deliveries.map(d => `<article><div class="mail-history-heading"><strong>${d.kind === 'test' ? 'Prueba · ' : ''}${esc(mailStatus[d.status])}</strong><time>${stamp(d.started_at)}</time></div><p>${esc(d.subject)}</p><dl><dt>Para</dt><dd>${esc(d.recipient_name)} · ${esc(d.recipient)}</dd><dt>Desde</dt><dd>${esc(d.sender)}</dd><dt>Solicitado por</dt><dd>${esc(d.initiated_by_email)}</dd>${d.finished_at ? `<dt>Finalizado</dt><dd>${stamp(d.finished_at)}</dd>` : ''}</dl>${d.failure_note ? `<p class="mail-history-note">${esc(d.failure_note)}</p>` : ''}${d.status === 'sending' ? '<p class="mail-history-note">En proceso. Si el envío se interrumpió, revisar el proveedor antes de repetirlo.</p>' : ''}</article>`).join('') : '<p class="empty">No hay intentos de envío registrados. La vista previa del correo no cuenta como un envío. Los envíos anteriores a esta actualización pueden no tener historial.</p>'}</div><p class="file-note">Fechas en hora de Santiago. “Enviada” indica aceptación del proveedor; no confirma entrega ni lectura.</p><div class="actions"><button class="primary" data-pass="${guest.id}">Ver pase con diseño</button><button class="secondary" data-qr="${guest.id}">Ver invitación y QR</button><button class="secondary" data-edit="${guest.id}">Editar datos</button></div>`);
     $('#modal').classList.add('invitation-modal');
   } catch (error) { toast(error.message); }
 }
@@ -115,7 +115,7 @@ async function showInvitation(id) {
   const allowed = state.user.mailEnabled && ['pending','failed','sent'].includes(guest.invitation_status);
   try {
     const preview = await api(`${path}/invitation-preview`);
-    modal(`<p class="eyebrow">VISTA PREVIA DEL CORREO</p><h2>Una invitación para ${esc(guest.name)}.</h2><dl class="email-summary"><dt>Para</dt><dd>${esc(preview.to)}</dd><dt>Asunto</dt><dd>${esc(preview.subject)}</dd><dt>Vista previa</dt><dd>${esc(preview.preheader)}</dd></dl><iframe id="invitation-preview" title="Correo de invitación" sandbox="" referrerpolicy="no-referrer"></iframe><div class="invitation-actions"><a class="secondary" href="${path}/qr" download="invitacion-qr.png">↓ Descargar QR</a><button id="send-invite" class="primary" ${allowed ? '' : 'disabled'}>${guest.invitation_status === 'sent' ? 'Reenviar invitación' : guest.invitation_status === 'sending' ? 'Enviando…' : 'Enviar invitación'}</button></div><p class="file-note">${state.user.mailEnabled ? 'El primer correo incluye el QR personal. El invitado solo debe mostrarlo al llegar.' : 'Envío de correo pendiente de configuración SMTP.'}</p><p id="modal-error" class="form-error" role="alert"></p>`);
+    modal(`<p class="eyebrow">VISTA PREVIA DEL CORREO</p><h2>Una invitación para ${esc(guest.name)}.</h2><dl class="email-summary"><dt>Para</dt><dd>${esc(preview.to)}</dd><dt>Asunto</dt><dd>${esc(preview.subject)}</dd><dt>Vista previa</dt><dd>${esc(preview.preheader)}</dd></dl><iframe id="invitation-preview" title="Correo de invitación" sandbox="" referrerpolicy="no-referrer"></iframe><div class="invitation-actions"><button class="secondary" data-pass="${id}">Ver pase con diseño</button><a class="secondary" href="${path}/qr" download="invitacion-qr.png">↓ Descargar QR</a><button id="send-invite" class="primary" ${allowed ? '' : 'disabled'}>${guest.invitation_status === 'sent' ? 'Reenviar invitación' : guest.invitation_status === 'sending' ? 'Enviando…' : 'Enviar invitación'}</button></div><p class="file-note">${state.user.mailEnabled ? 'El primer correo incluye el QR personal. El invitado solo debe mostrarlo al llegar.' : 'Envío de correo pendiente de configuración SMTP.'}</p><p id="modal-error" class="form-error" role="alert"></p>`);
     $('#modal').classList.add('invitation-modal');
     $('#invitation-preview').srcdoc = preview.html;
     $('#send-invite').onclick = () => {
@@ -128,6 +128,7 @@ document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.view) setView(button.dataset.view);
   if (button.dataset.detail) showGuestDetail(Number(button.dataset.detail));
+  if (button.dataset.pass) showPass(Number(button.dataset.pass));
   if (button.dataset.qr) showInvitation(Number(button.dataset.qr));
   if (button.dataset.edit) guestModal(Number(button.dataset.edit));
 
@@ -167,12 +168,12 @@ enterWorkspace().catch(showLogin);
 let designImages = {logo:'',hero:''}, designEventId = null;
 async function loadDesign() {
   const eventId = state.eventId;
-  document.querySelectorAll('#design-form input,#design-form textarea,#design-form button').forEach(element=>element.disabled=!eventId);
+  document.querySelectorAll('#design-form input,#design-form textarea,#design-form select,#design-form button').forEach(element=>element.disabled=!eventId);
   if (!eventId) return;
   const design = await api(`/api/events/${eventId}/design`);
   if (eventId !== state.eventId) return;
   designEventId = eventId;
-  for (const key of ['subject','heading','message','closing','color','background']) $(`#design-form [name=${key}]`).value = design[key];
+  for (const key of ['subject','heading','message','closing','color','background','passStyle','passLabel','passFooter','qrTone']) $(`#design-form [name=${key}]`).value = design[key];
   designImages = {logo:design.logo,hero:design.hero};
   for (const key of ['logo','hero']) { $(`#design-${key}`).value=''; showDesignImage(key); }
   $('#design-error').textContent='';
@@ -235,4 +236,35 @@ $('#prepare-batch').onclick=async()=> {
     modal(`<h2>Revisar envío masivo</h2><p>Enviarás <strong>${guests.length} invitaciones</strong> con QR a ${esc(categoryLabels[category] || 'todas las categorías')}, usando el diseño guardado del evento.</p><ul class="recipient-list">${guests.map(g=>`<li>${esc(g.name)} · ${esc(g.email)}</li>`).join('')}</ul><p class="file-note">Los envíos continuarán aunque cierres esta página. Los fallos no se reintentan automáticamente.</p><form id="modal-form"><p id="modal-error" class="form-error" role="alert"></p><button class="primary">Confirmar envío de ${guests.length} invitaciones</button></form>`);
     bindForm(async()=>{ await api(`${path}/batches`,{method:'POST',body:JSON.stringify({category,guestIds:guests.map(g=>g.id)})}); toast('Envío agregado a la cola. Revisa su avance en Correos.'); });
   } catch(error) { toast(error.message); }
+};
+
+
+async function showPassImage(svg, filename, draft=false) {
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+  canvas.getContext('2d').drawImage(image,0,0);
+  const png = canvas.toDataURL('image/png');
+  modal(`<p class="eyebrow">UN PASE CON LA IDENTIDAD DE TU CLIENTE</p><h2>Tu pase de acceso.</h2><img id="pass-preview" class="branded-pass" alt="Pase de acceso con diseño del evento"><div class="actions"><a id="download-pass" class="primary" download="${filename}">↓ Descargar pase PNG</a></div><p class="file-note">${draft ? 'Vista previa con los cambios actuales. Guarda el diseño para aplicarlo a todos los invitados.' : 'Este pase contiene el mismo código de acceso de la invitación. Cambiar el diseño no permite ingresar nuevamente.'}</p>`);
+  $('#modal').classList.add('invitation-modal');
+  $('#pass-preview').src=png; $('#download-pass').href=png;
+}
+async function showPass(id) {
+  const eventId=state.eventId;
+  try {
+    const {svg}=await api(`/api/events/${eventId}/guests/${id}/pass`);
+    if(eventId!==state.eventId || !state.user) return;
+    await showPassImage(svg,`pase-evento-${eventId}-invitado-${id}.png`);
+  } catch(error) { toast('No se pudo preparar el pase. '+error.message); }
+}
+$('#preview-pass').onclick=async()=> {
+  const eventId=state.eventId, button=$('#preview-pass'); button.disabled=true;
+  try {
+    const {svg}=await api(`${eventPath()}/pass-preview`,{method:'POST',body:designBody()});
+    if(eventId!==state.eventId || !state.user) return;
+    await showPassImage(svg,`pase-vista-previa-${eventId}.png`,true);
+  } catch(error) { $('#design-error').textContent='No se pudo preparar el pase. '+error.message; }
+  finally { button.disabled=!state.eventId; }
 };

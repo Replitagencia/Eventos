@@ -96,3 +96,7 @@ La acreditación es una aplicación de acceso separada de la planificación, con
 - **Panel y reporte:** confirmados, declinados, sin respuesta, correos por revisar y totales de ingreso; CSV incluye categoría, notas y confirmación. Pendientes de llegada equivale a ausentes al cerrar el evento; no se deduce un cierre por la hora de inicio.
 
 El envío real continúa sujeto a configurar un proveedor y remitente. Las pruebas automatizadas no envían correos reales. La aplicación de operarios conserva su separación y no recibe estas funciones administrativas.
+
+## Pases con marca del cliente
+
+El apartado Diseño del pase QR permite elegir color de marca, minimalista o con imagen principal, personalizar el título y la instrucción y usar QR negro o del color de marca oscurecido. Reutiliza logo, imágenes y colores del evento. Desde la ficha o la invitación se visualiza el pase individual y se descarga en PNG. La vista previa del diseño usa el primer invitado; en un evento vacío genera una muestra sin acceso. Cambiar el diseño conserva el token y el historial de ingreso.
