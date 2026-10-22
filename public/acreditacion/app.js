@@ -1,6 +1,8 @@
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const state = { user: null, events: [], eventId: null, results: [], busy: false, scanner: null, cameraStarting: false, cameraGeneration: 0, scanHandling: false, searchGeneration: 0, timer: null };
+const state = { user: null, events: [], eventId: null, results: [], busy: false, scanner: null, cameraStarting: false, cameraActive: false, cameraStopping: null, cameraGeneration: 0, lastQr: null, lastQrSeenAt: 0, readyAt: 0, resultTimer: null, searchGeneration: 0, timer: null };
+const RESULT_DELAY = 1400;
+const SAME_QR_ABSENCE = 1800;
 let debounce;
 function notice(message) { $('#notice').textContent = message; $('#notice').hidden = !message; }
 function connection(online) { $('#connection').textContent = online ? 'Conectado' : 'Sin conexión'; $('#connection').classList.toggle('offline', !online); }
@@ -39,7 +41,7 @@ async function enter() {
 }
 async function loadEvents() {
   const events = await api('/events');
-  if (!state.user) return;
+  if (!state.user || state.busy) return;
   state.events = events;
   const current = state.eventId;
   if (!events.some(event => event.id === current)) state.eventId = events[0]?.id ?? null;
@@ -71,43 +73,81 @@ async function search() {
 function setBusy(value) {
   state.busy = value;
   document.querySelectorAll('#tools button,#event-select,#logout').forEach(button => button.disabled = value);
+  // Siempre se puede apagar la cámara, incluso esperando al servidor.
+  $('#stop-camera').disabled = false;
 }
-async function checkin(body) {
+async function checkin(body, { fromCamera = false } = {}) {
   if (state.busy || !state.eventId) return;
+  const eventId = state.eventId, user = state.user;
   setBusy(true); notice('');
-  await stopCamera();
+  if (!fromCamera) await stopCamera();
+  clearTimeout(state.resultTimer);
+  $('#scan-status').textContent = 'Validando ingreso…';
   const result = $('#checkin-result'); result.hidden = false; result.className = 'pending'; result.innerHTML = '<strong>Validando…</strong><p>Espera la confirmación de ingreso.</p>';
   try {
-    const data = await api(`/events/${state.eventId}/checkin`, { method: 'POST', body: JSON.stringify(body) });
+    const data = await api(`/events/${eventId}/checkin`, { method: 'POST', body: JSON.stringify(body) });
+    if (state.user !== user || state.eventId !== eventId) return;
     result.className = ''; result.innerHTML = `<strong>✓ ACREDITADO</strong><p>${esc(data.name)}</p><small>${new Date(data.checked_at).toLocaleTimeString('es-CL', { timeZone: 'America/Santiago' })} · Ingreso registrado</small>`;
     if ($('#manual-search').value.trim().length >= 2) await search();
   } catch (error) {
+    if (state.user !== user || state.eventId !== eventId) return;
     result.className = 'error'; result.innerHTML = `<strong>${error.status === 409 ? 'YA INGRESÓ' : error.status === 400 ? 'QR INVÁLIDO' : 'INGRESO NO CONFIRMADO'}</strong><p>${esc(error.data?.name || error.message)}</p>${error.data?.checked_at ? `<small>Ingreso anterior: ${new Date(error.data.checked_at).toLocaleTimeString('es-CL', { timeZone: 'America/Santiago' })}</small>` : ''}`;
     if (error.status === 403) { state.searchGeneration++; state.results = []; $('#manual-results').textContent = ''; }
+    // Un error de red o permisos exige resolver la incidencia antes de continuar.
+    if (![400, 409].includes(error.status)) {
+      await stopCamera();
+      notice('Escaneo detenido. Revisa el resultado y la conexión antes de activar la cámara nuevamente.');
+    }
   } finally {
-    setBusy(false); $('#start-camera').textContent = 'Escanear siguiente';
-    if (state.user) result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    setBusy(false);
+    if (fromCamera && state.cameraActive) {
+      state.readyAt = performance.now() + RESULT_DELAY;
+      $('#scan-status').textContent = 'Retira este QR. El siguiente se leerá automáticamente.';
+      const generation = state.cameraGeneration;
+      state.resultTimer = setTimeout(() => {
+        if (generation !== state.cameraGeneration || !state.cameraActive) return;
+        result.hidden = true;
+        $('#scan-status').textContent = 'Escaneo automático activo. Presenta el siguiente QR.';
+      }, RESULT_DELAY);
+    } else if (!fromCamera && state.user) result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 async function stopCamera() {
   state.cameraGeneration++;
-  if (state.scanner?.isScanning) { try { await state.scanner.stop(); } catch {} }
+  state.cameraActive = false;
+  clearTimeout(state.resultTimer);
+  $('#scan-status').hidden = true;
+  if (!state.cameraStopping && state.scanner?.isScanning) {
+    state.cameraStopping = state.scanner.stop().catch(() => {}).finally(() => { state.cameraStopping = null; });
+  }
+  if (state.cameraStopping) await state.cameraStopping;
   $('#start-camera').hidden = false; $('#stop-camera').hidden = true; $('#camera-placeholder').hidden = false;
 }
 async function startCamera() {
-  if (state.busy || state.cameraStarting || !state.eventId) return;
+  if (state.busy || state.cameraStarting || state.cameraStopping || state.cameraActive || !state.eventId) return;
   if (!window.isSecureContext) return notice('Necesitas abrir esta aplicación con HTTPS para usar la cámara del celular.');
   notice(''); state.cameraStarting = true; $('#start-camera').disabled = true;
   const generation = ++state.cameraGeneration;
+  state.lastQr = null; state.lastQrSeenAt = 0; state.readyAt = 0;
+  $('#checkin-result').hidden = true;
   try {
     state.scanner ||= new Html5Qrcode('reader');
     await state.scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 230, height: 230 } }, async qr => {
-      if (state.scanHandling || state.busy || generation !== state.cameraGeneration) return;
-      state.scanHandling = true;
-      try { await stopCamera(); await checkin({ qr }); } finally { state.scanHandling = false; }
+      if (!state.cameraActive || generation !== state.cameraGeneration) return;
+      const now = performance.now();
+      const sameQr = qr === state.lastQr;
+      const repeated = sameQr && now - state.lastQrSeenAt < SAME_QR_ABSENCE;
+      // Actualizar incluso durante la validación: un QR sostenido frente a la
+      // cámara no debe convertirse en una nueva solicitud al terminar la espera.
+      if (sameQr) state.lastQrSeenAt = now;
+      if (repeated || state.busy || now < state.readyAt) return;
+      state.lastQr = qr; state.lastQrSeenAt = now;
+      await checkin({ qr }, { fromCamera: true });
     });
     if (generation !== state.cameraGeneration || !state.user || document.hidden) { await stopCamera(); return; }
+    state.cameraActive = true;
     $('#camera-placeholder').hidden = true; $('#start-camera').hidden = true; $('#stop-camera').hidden = false;
+    $('#scan-status').hidden = false; $('#scan-status').textContent = 'Escaneo automático activo. Presenta un QR.';
   } catch { notice('No se pudo abrir la cámara. Revisa el permiso o usa Buscar persona.'); }
   finally { state.cameraStarting = false; $('#start-camera').disabled = state.busy; }
 }

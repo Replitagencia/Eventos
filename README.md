@@ -27,7 +27,7 @@ Con `SEED_DEMO=true`, el primer inicio crea un evento y 12 invitados **ficticios
 - Filtrar por asistencia y estado de correo; consultar intentos enviados o por revisar, con destinatario y administrador solicitante.
 - Importar `.csv` o `.xlsx`, hasta 1.000 filas / 2 MB. Valida antes de insertar y omite duplicados por correo o RUT dentro del evento.
 - Generar, visualizar y descargar un QR único por invitado/evento.
-- Escanear desde la aplicación móvil independiente o buscar asistentes y acreditar manualmente con confirmación. La búsqueda devuelve hasta 20 coincidencias, con correo y RUT parcialmente ocultos.
+- Escanear continuamente desde la aplicación móvil: activar la cámara una vez y presentar los QR uno tras otro, sin botones entre personas. También permite buscar asistentes y acreditar manualmente con confirmación. La búsqueda devuelve hasta 20 coincidencias, con correo y RUT parcialmente ocultos.
 - Registrar un único ingreso con fecha, método y operador; rechazar QR inválido o de otro evento.
 - Actualizar el panel administrador en vivo mediante SSE. La aplicación de acceso consulta permisos y búsquedas activas cada 15 segundos; cada acreditación se valida inmediatamente en el servidor.
 - Exportar un CSV de invitados/ingresos y otro del historial de correos. Excel puede abrirlos.

@@ -49,3 +49,9 @@ Este despliegue habilita el panel y el escáner por HTTPS. No sustituye las prue
 - Persistencia e integridad comprobadas tras recrear el contenedor; se conservaron los IDs y roles de usuarios y el estado de las tablas. La aplicación está saludable y el puerto 3000 no se publica.
 - Respaldo inicial verificado y descargado al Mac en `.local/backups/`. Temporizador diario habilitado a las 06:00 UTC con hasta cinco minutos de variación; por ahora los respaldos diarios permanecen en el servidor. Falta configurar su transferencia periódica a un segundo destino.
 - Credenciales locales privadas en `.env.production` y `.local/accesos-servidor.txt`, excluidas de Git. No se reutilizaron claves de Bice Vida ni se copiaron los datos locales de la demo.
+
+## Actualización del 22 de octubre de 2026: escaneo continuo
+
+La acreditación mantiene la cámara abierta y continúa automáticamente entre personas. Se conservan la validación del servidor y la auditoría atómica del primer ingreso. Respaldo previo guardado en servidor y Mac; imagen anterior retenida como `agency-eventos-app:before-continuous-20261022`. La actualización recreó solamente la aplicación y conservó su volumen de datos.
+
+Verificación: 22 pruebas de sistema y 5 de interfaz aprobadas. Las pruebas de cámara usan detecciones simuladas con la API real de un servidor aislado en memoria; incluyen QR sostenido, personas sucesivas, duplicados, QR inválido, respuesta perdida después de guardar, cancelación durante validación, permiso de cámara tardío y revocación de acceso. Queda pendiente el ensayo físico en iPhone/Android.

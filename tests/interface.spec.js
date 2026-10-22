@@ -7,6 +7,7 @@ test('flujo administrador y operador móvil sincronizados', async ({ page, brows
   await page.getByLabel('Correo electrónico', { exact: true }).fill('admin@test.local');
   await page.getByLabel('Contraseña', { exact: true }).fill('admin-ui-test-password');
   await page.getByRole('button', { name: 'Ingresar al espacio' }).click();
+  await page.locator('#event-select').selectOption({ label: 'Encuentro Agency 2026' });
   await expect(page.locator('#stat-total')).toHaveText('12');
   await page.getByRole('button', { name: 'Acceso operarios', exact: true }).click();
   await page.getByRole('button', { name: 'Asignar operarios', exact: true }).click();
@@ -53,6 +54,7 @@ test('flujo administrador y operador móvil sincronizados', async ({ page, brows
   await mobile.getByLabel('Contraseña', { exact: true }).fill('operator-ui-test-password');
   await mobile.getByRole('button', { name: 'Entrar a acreditación' }).click();
   await expect(mobile.locator('#access-view')).toBeVisible();
+  await mobile.locator('#event-select').selectOption({ label: 'Encuentro Agency 2026' });
   await expect(mobile.locator('#event-name')).toHaveText('Encuentro Agency 2026');
   await expect(mobile.getByText('Resumen', { exact: true })).toHaveCount(0);
   await expect(mobile.getByText('Invitados', { exact: true })).toHaveCount(0);

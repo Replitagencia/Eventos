@@ -25,7 +25,7 @@ Duración sugerida: 7–10 minutos. Zona horaria: America/Santiago.
 | 6–7 min | Abrir Ver ficha y volver al panel | Datos, correo, hora de ingreso y operador |
 | 7–8 min | Filtrar invitados y descargar los reportes | CSV de invitados/ingresos e historial de correos |
 
-La cámara se detiene tras leer un QR para permitir revisar el resultado; pulsar “Escanear siguiente” para el siguiente invitado.
+Activar la cámara una sola vez. Después de cada resultado, retirar el QR y presentar el siguiente: la cámara permanece encendida y el escaneo continúa automáticamente tras una pausa de 1,4 segundos. Mantener un QR frente al lente no repite la solicitud; al retirarlo al menos 1,8 segundos y volver a mostrarlo se verifica nuevamente y debe aparecer “YA INGRESÓ”. “Detener cámara” funciona incluso mientras se espera la respuesta. Si no se confirma una operación por error de red, revisar el resultado y reactivar la cámara; reintentar conserva siempre el primer ingreso.
 
 ## Ensayos antes de presentarlo
 
@@ -40,4 +40,4 @@ La cámara se detiene tras leer un QR para permitir revisar el resultado; pulsar
 
 ## Estado al preparar el repositorio
 
-Flujo local, importación y acreditación implementados. Configuración SMTP real, alojamiento HTTPS, ensayo con cámaras físicas y prueba en la red del recinto pendientes. El reporte descargado es CSV, no un archivo XLSX nativo.
+Flujo local, importación y acreditación continua implementados y publicados con HTTPS en `test.registroevento.cl`. Configuración de correo real, ensayo con cámaras físicas y prueba en la red del recinto pendientes. El reporte descargado es CSV, no un archivo XLSX nativo.

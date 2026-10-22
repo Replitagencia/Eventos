@@ -27,8 +27,9 @@
         <section id="scan-panel" class="card" role="tabpanel" aria-labelledby="scan-tab">
           <div id="camera-placeholder"><span aria-hidden="true">⌗</span><h2>Listo para escanear.</h2><p>Apunta la cámara al QR que te muestre el invitado.</p></div>
           <div id="reader"></div>
+          <p id="scan-status" class="scan-status" role="status" hidden></p>
           <button id="start-camera" class="primary">Activar cámara</button><button id="stop-camera" class="secondary" hidden>Detener cámara</button>
-          <p class="hint">Permite el uso de la cámara. El QR puede estar en un celular o impreso.</p>
+          <p class="hint">Activa la cámara una vez. Después de cada resultado, retira el QR y presenta el siguiente: se leerá automáticamente.</p>
           <details><summary>Ingresar código QR manualmente</summary><form id="qr-form"><label>Código QR<input name="qr" required placeholder="EVT:…" autocomplete="off" autocapitalize="off" spellcheck="false"></label><button class="secondary">Validar código</button></form></details>
         </section>
         <section id="search-panel" class="card" role="tabpanel" aria-labelledby="search-tab" hidden>

@@ -36,7 +36,9 @@ Para un túnel HTTPS de demostración, mantener el servidor en `127.0.0.1`, pone
 1. El administrador entra al panel, selecciona el evento y abre **Acceso operarios → Asignar operarios**.
 2. Marca las cuentas autorizadas y guarda. Para revocar, desmarca la cuenta y guarda; las nuevas búsquedas e ingresos quedan bloqueados inmediatamente.
 3. Entrega al operario la dirección `/acreditacion/` y sus credenciales. Para la cuenta inicial usa `OPERATOR_EMAIL` y `OPERATOR_PASSWORD`; no compartir las credenciales de administrador.
-4. El operario inicia sesión en su aplicación móvil, selecciona uno de sus eventos asignados y escanea. Como alternativa, usa **Buscar persona** y confirma el nombre antes de acreditar.
+4. El operario inicia sesión en su aplicación móvil, selecciona uno de sus eventos asignados y pulsa **Activar cámara** una vez. El escaneo continúa automáticamente entre personas: retirar el QR tras el resultado y presentar el siguiente. **Detener cámara** apaga la cámara en cualquier momento. Como alternativa, usa **Buscar persona** y confirma el nombre antes de acreditar.
+
+Durante una validación solo se procesa una solicitud; no se acumulan lecturas. El resultado se muestra 1,4 segundos y luego se vuelve a esperar otro QR. Un código sostenido frente a la cámara no repite solicitudes. Retirarlo al menos 1,8 segundos permite volver a verificarlo. La cámara se detiene al cambiar de evento, abrir la búsqueda manual, ocultar la página, salir, perder conexión o recibir un error de permisos/servidor. Ante una respuesta perdida, reactivar y reintentar: el servidor puede responder “YA INGRESÓ” si alcanzó a registrar el primer intento.
 
 La aplicación móvil no muestra planificación, correos, informes, totales ni fichas de administración. Cada búsqueda entrega hasta 20 coincidencias y oculta parcialmente correo y RUT. Los nombres y empresas permiten identificar al asistente; los datos completos se consultan solo desde administración.
 
